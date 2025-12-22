@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.7"
+__version__ = "1.0.8"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
@@ -65,6 +65,12 @@ import functools
 _client = None
 _pending_handlers = []
 
+# NewMessage'ın desteklediği parametreler
+VALID_PARAMS = {
+    'incoming', 'outgoing', 'from_users', 'forwards', 'pattern',
+    'chats', 'blacklist_chats', 'func'
+}
+
 def set_client(client):
     global _client
     _client = client
@@ -73,17 +79,25 @@ def set_client(client):
     _pending_handlers.clear()
 
 def register(outgoing=True, incoming=False, pattern=None, **kwargs):
+    # Bilinmeyen parametreleri filtrele (disable_errors, allow_sudo vb.)
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in VALID_PARAMS}
+    
     def decorator(func):
         event = events.NewMessage(
             outgoing=outgoing,
             incoming=incoming,
             pattern=pattern,
-            **kwargs
+            **filtered_kwargs
         )
         
         @functools.wraps(func)
         async def wrapper(event):
-            return await func(event)
+            try:
+                return await func(event)
+            except Exception as e:
+                # disable_errors=True olan pluginler için hataları yut
+                print(f"[PLUGIN HATA] {func.__name__}: {e}")
+                return None
         
         if _client is not None:
             _client.add_event_handler(wrapper, event)
