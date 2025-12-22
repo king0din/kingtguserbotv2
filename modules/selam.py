@@ -20,8 +20,8 @@ def register(client):
             await event.edit(frame)
             await asyncio.sleep(0.3)
     
-    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.merhaba$'))
+    @client.on(events.NewMessage(outgoing=True, pattern=r'^\.mrb$'))
     async def merhaba(event):
-        await event.edit("👋 Merhaba dünya!")
+        await event.edit("👋 Merhaba Nasılsın")
     
     print("[selam.py] Event handler'lar kaydedildi")
