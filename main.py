@@ -13,9 +13,9 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __author__ = "@KingOdi"
-__repo__ = "özeldir"
+__repo__ = "şuanlık özeldir"
 # ============================================
 
 load_dotenv()
@@ -204,7 +204,284 @@ async def callback_handler(event):
     elif data == "close":
         await event.delete()
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.start$'))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.start
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.ping$'))
+async def ping_cmd(e):
+    start = time.time()
+    msg = await e.edit("🏓 **Pong!**")
+    end = time.time()
+    ping = (end - start) * 1000
+    
+    uptime = get_readable_time(time.time() - start_time)
+    
+    text = f"**🏓 Pong!**\n\n"
+    text += f"**⚡ Ping:** `{ping:.2f}ms`\n"
+    text += f"**⏱️ Uptime:** `{uptime}`\n"
+    text += f"**🔢 Sürüm:** `v{__version__}`"
+    
+    await msg.edit(text)
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.help$'))
+async def help_cmd(e):
+    try:
+        me = await bot.get_me()
+        res = await client.inline_query(me.username, "help_menu")
+        await res[0].click(e.chat_id)
+        await e.delete()
+    except Exception as err:
+        await e.edit(f"❌ Hata: {err}")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.modules$'))
+async def list_modules(e):
+    if loaded_modules:
+        text = "**🔌 Yüklü Modüller:**\n\n"
+        text += "\n".join([f"• `{name}`" for name in loaded_modules.keys()])
+    else:
+        text = "⚠️ Henüz modül yüklenmemiş"
+    await e.edit(text)
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
+async def pinstall(e):
+    reply = await e.get_reply_message()
+    if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
+        if not os.path.exists("modules"):
+            os.makedirs("modules")
+        
+        path = await reply.download_media(file="modules/")
+        name = os.path.basename(path).replace('.py', '')
+        
+        await e.edit(f"⏳ `{name}` yükleniyor...")
+        
+        if await load_plugins(name):
+            await e.edit(f"✅ `{name}` başarıyla yüklendi ve aktif!")
+        else:
+            await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
+    else:
+        await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.delpin (\S+)$'))
+async def delpin(e):
+    plugin_name = e.pattern_match.group(1)
+    
+    if plugin_name.endswith('.py'):
+        plugin_name = plugin_name[:-3]
+    
+    path = f"modules/{plugin_name}.py"
+    
+    if not os.path.exists(path):
+        await e.edit(f"❌ `{plugin_name}` bulunamadı!\n\n💡 Yüklü modüller için `.modules` kullanın.")
+        return
+    
+    await e.edit(f"⏳ `{plugin_name}` siliniyor...")
+    
+    try:
+        os.remove(path)
+        
+        if plugin_name in loaded_modules:
+            del loaded_modules[plugin_name]
+        
+        if plugin_name in sys.modules:
+            del sys.modules[plugin_name]
+        
+        await e.edit(f"✅ `{plugin_name}` başarıyla silindi!\n\n🔄 Event handler'lar yeniden başlatma sonrası temizlenecek.")
+        
+    except Exception as err:
+        await e.edit(f"❌ `{plugin_name}` silinirken hata:\n```\n{str(err)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.listpins$'))
+async def listpins(e):
+    module_files = glob.glob("modules/*.py")
+    
+    if not module_files:
+        await e.edit("⚠️ `modules/` klasöründe plugin bulunamadı.")
+        return
+    
+    text = "**📦 Dosya Sistemindeki Pluginler:**\n\n"
+    
+    for f in sorted(module_files):
+        name = os.path.basename(f).replace('.py', '')
+        size = os.path.getsize(f) / 1024
+        status = "✅" if name in loaded_modules else "❌"
+        text += f"{status} `{name}` ({size:.1f} KB)\n"
+    
+    text += f"\n**Toplam:** {len(module_files)} plugin"
+    text += f"\n**Yüklü:** {len(loaded_modules)} plugin"
+    
+    await e.edit(text)
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
+async def update_bot(e):
+    msg = await e.edit("🔄 **Güncelleme kontrol ediliyor...**")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!\n\n**Manuel Kurulum:**\n```bash\ngit clone https://github.com/USERNAME/REPO .\n```")
+            return
+        
+        repo = git.Repo(".")
+        current_branch = repo.active_branch.name
+        origin = repo.remotes.origin
+        origin.fetch()
+        
+        commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
+        
+        if not commits_behind:
+            await msg.edit(f"✅ **Bot zaten güncel!**\n\n📌 Branch: `{current_branch}`\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n🔢 Sürüm: `v{__version__}`")
+            return
+        
+        update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n**Son Değişiklikler:**\n"
+        for i, commit in enumerate(commits_behind[:3], 1):
+            update_info += f"{i}. {commit.summary[:50]}\n"
+        if len(commits_behind) > 3:
+            update_info += f"   _{len(commits_behind) - 3} değişiklik daha..._\n"
+        
+        update_info += "\n⏳ Güncelleniyor..."
+        await msg.edit(update_info)
+        
+        if repo.is_dirty():
+            repo.git.stash('save', 'Auto-stash before update')
+            stashed = True
+        else:
+            stashed = False
+        
+        origin.pull(current_branch)
+        
+        if stashed:
+            try:
+                repo.git.stash('pop')
+            except:
+                pass
+        
+        if os.path.exists("requirements.txt"):
+            await msg.edit("📦 Bağımlılıklar güncelleniyor...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        try:
+            with open("main.py", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("__version__"):
+                        new_version = line.split("=")[1].strip().strip('"').strip("'")
+                        break
+                else:
+                    new_version = "bilinmiyor"
+        except:
+            new_version = "bilinmiyor"
+        
+        await msg.edit(f"✅ **Güncelleme tamamlandı!**\n\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n🔢 Eski Sürüm: `v{__version__}`\n🆕 Yeni Sürüm: `v{new_version}`\n\n🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except git.exc.GitCommandError as e:
+        await msg.edit(f"❌ **Git Hatası:**\n```\n{str(e)}\n```\n\n💡 `.hardupdate` komutunu deneyin")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.hardupdate$'))
+async def hard_update(e):
+    msg = await e.edit("⚠️ **HARD UPDATE**\n\nBu işlem tüm local değişiklikleri silecek!\n⏳ 5 saniye içinde iptal için mesajı silin...")
+    
+    await asyncio.sleep(5)
+    
+    try:
+        try:
+            await msg.edit("🔄 Hard update başlatılıyor...")
+        except:
+            return
+        
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        repo.git.reset('--hard', f'origin/{current_branch}')
+        repo.git.clean('-fd')
+        origin.pull(current_branch)
+        
+        if os.path.exists("requirements.txt"):
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Hard update tamamlandı!**\n\n🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull$'))
+async def git_pull(e):
+    msg = await e.edit("🔄 Git pull yapılıyor...")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        origin.fetch()
+        result = origin.pull(current_branch)
+        
+        if result[0].flags & result[0].HEAD_UPTODATE:
+            await msg.edit("✅ Zaten güncel!")
+        else:
+            await msg.edit(f"✅ Pull tamamlandı!\n\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n\n⚠️ Değişikliklerin aktif olması için `.restart` kullanın")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
+async def restart_bot(e):
+    await e.edit("🔄 Bot yeniden başlatılıyor...")
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def main():
+    log("=" * 50)
+    log(f"🤖 KingTG UserBot v{__version__}")
+    log(f"👨‍💻 Geliştirici: {__author__}")
+    log(f"💻 Repo: {__repo__}")
+    log("=" * 50)
+    
+    log("🔄 Userbot başlatılıyor...")
+    await client.start()
+    me = await client.get_me()
+    log(f"✅ Userbot bağlandı: {me.first_name} (@{me.username})")
+    
+    log("🔄 Inline bot başlatılıyor...")
+    await bot.start(bot_token=BOT_TOKEN)
+    bot_me = await bot.get_me()
+    log(f"✅ Inline bot bağlandı: @{bot_me.username}")
+    
+    if not os.path.exists("modules"):
+        os.makedirs("modules")
+        log("📁 modules/ klasörü oluşturuldu")
+    
+    log("🔄 Modüller yükleniyor...")
+    module_files = glob.glob("modules/*.py")
+    if module_files:
+        for f in module_files:
+            name = os.path.basename(f).replace('.py', '')
+            await load_plugins(name)
+    else:
+        log("⚠️ modules/ klasöründe modül bulunamadı")
+    
+    log("=" * 50)
+    log(f"✅ Bot Hazır! Sürüm: v{__version__}")
+    log(f"🔌 Yüklü Modüller: {len(loaded_modules)}")
+    log(f"📱 Komutlar için .help yazın")
+    log("=" * 50)
+    
+    await client.run_until_disconnected()
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())))
 async def start(e):
     uptime = get_readable_time(time.time() - start_time)
     me = await client.get_me()
@@ -220,7 +497,14 @@ async def start(e):
     text += f"**💻 Repo:** `{__repo__}`\n"
     text += f"**👨‍💻 Geliştirici:** `{__author__}`"
     
-    await e.edit(text)
+    buttons = [
+        [Button.inline("🔄 Güncelle", b"update"), Button.inline("🔌 Modüller", b"show_modules")],
+        [Button.inline("🏓 Ping", b"ping"), Button.inline("❓ Yardım", b"help_main")],
+        [Button.inline("🔁 Yeniden Başlat", b"restart_confirm")]
+    ]
+    
+    await e.reply(text, buttons=buttons)
+    await e.delete()
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ping$'))
 async def ping_cmd(e):
