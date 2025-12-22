@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import glob
 import inspect
+import subprocess
 from telethon import TelegramClient, events, Button
 from dotenv import load_dotenv
 
@@ -21,12 +22,49 @@ loaded_modules = {}
 def log(text):
     print(f"\033[94m[SİSTEM]\033[0m {text}")
 
+def install_package(package_name):
+    """Pip ile paket kur"""
+    try:
+        log(f"📦 {package_name} kuruluyor...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name, "-q"])
+        log(f"✅ {package_name} kuruldu")
+        return True
+    except Exception as e:
+        log(f"❌ {package_name} kurulamadı: {e}")
+        return False
+
+def check_requirements(path):
+    """Modül dosyasındaki requirements yorumunu kontrol et"""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                # # requires: paket1, paket2 formatını ara
+                if line.strip().startswith('# requires:') or line.strip().startswith('# requirements:'):
+                    packages = line.split(':', 1)[1].strip().split(',')
+                    return [pkg.strip() for pkg in packages if pkg.strip()]
+    except:
+        pass
+    return []
+
 async def load_plugins(plugin_name):
     try:
         path = f"modules/{plugin_name}.py"
         if not os.path.exists(path):
             log(f"❌ {path} bulunamadı")
             return False
+        
+        # Modül gereksinimlerini kontrol et
+        required_packages = check_requirements(path)
+        if required_packages:
+            log(f"🔍 {plugin_name} için gereksinimler: {', '.join(required_packages)}")
+            for pkg in required_packages:
+                try:
+                    __import__(pkg)
+                except ImportError:
+                    log(f"⚠️ {pkg} bulunamadı, kuruluyor...")
+                    if not install_package(pkg):
+                        log(f"❌ {plugin_name} yüklenemedi: {pkg} kurulamadı")
+                        return False
         
         # Modülü yükle
         spec = importlib.util.spec_from_file_location(plugin_name, path)
@@ -36,7 +74,19 @@ async def load_plugins(plugin_name):
             
         mod = importlib.util.module_from_spec(spec)
         sys.modules[plugin_name] = mod
-        spec.loader.exec_module(mod)
+        
+        try:
+            spec.loader.exec_module(mod)
+        except ImportError as e:
+            # Import hatası varsa, eksik paketi bulmaya çalış
+            missing = str(e).split("'")[1] if "'" in str(e) else str(e)
+            log(f"⚠️ {plugin_name} için {missing} gerekli, kuruluyor...")
+            if install_package(missing):
+                # Tekrar dene
+                importlib.reload(mod)
+            else:
+                log(f"❌ {plugin_name} yüklenemedi: {missing} kurulamadı")
+                return False
         
         # YÖNTEM 1: register() fonksiyonu var mı kontrol et (ÖNERİLEN)
         if hasattr(mod, 'register') and callable(mod.register):
