@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.2"
+__version__ = "1.0.0"
 __author__ = "KingTG"
 __repo__ = "github.com/yourusername/kingtguserbotv2"
 # ============================================
@@ -34,6 +34,7 @@ def log(text):
     print(f"\033[94m[SİSTEM]\033[0m {text}")
 
 def get_readable_time(seconds):
+    """Saniyeyi okunabilir formata çevir"""
     intervals = (
         ('gün', 86400),
         ('saat', 3600),
@@ -49,6 +50,7 @@ def get_readable_time(seconds):
     return ', '.join(result[:2]) if result else '0 saniye'
 
 def install_package(package_name):
+    """Pip ile paket kur"""
     try:
         log(f"📦 {package_name} kuruluyor...")
         subprocess.check_call([sys.executable, "-m", "pip", "install", package_name, "-q"])
@@ -59,6 +61,7 @@ def install_package(package_name):
         return False
 
 def check_requirements(path):
+    """Modül dosyasındaki requirements yorumunu kontrol et"""
     try:
         with open(path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -158,16 +161,15 @@ async def inline_handler(event):
             "Userbot Menü", 
             text=f"**🤖 Komut Paneli** `v{__version__}`",
             buttons=[
-                [Button.inline("📜 Komutlar", b"cmds")],
-                [Button.inline("🔌 Modüller", b"mods")],
-                [Button.inline("❌ Kapat", b"close")]
+                [Button.inline("📜 Komutlar", "cmds")],
+                [Button.inline("🔌 Modüller", "mods")],
+                [Button.inline("❌ Kapat", "close")]
             ]
         )])
 
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
-    data = event.data.decode() if isinstance(event.data, bytes) else event.data
-    
+    data = event.data.decode()
     if data == "cmds":
         cmd_text = f"**📜 Ana Komutlar** `v{__version__}`\n\n"
         cmd_text += "• `.start` - Bot bilgileri\n"
@@ -181,8 +183,7 @@ async def callback_handler(event):
         cmd_text += "• `.hardupdate` - Zorla güncelle\n"
         cmd_text += "• `.gitpull` - Manuel pull\n"
         cmd_text += "• `.restart` - Yeniden başlat"
-        await event.edit(cmd_text, buttons=[[Button.inline("🔙 Geri", b"back")]])
-    
+        await event.edit(cmd_text, buttons=[[Button.inline("🔙 Geri", "back")]])
     elif data == "mods":
         if loaded_modules:
             mod_text = "**🔌 Yüklü Modüller:**\n\n"
@@ -190,200 +191,17 @@ async def callback_handler(event):
             mod_text += f"\n\n**Toplam:** {len(loaded_modules)} modül"
         else:
             mod_text = "⚠️ Henüz modül yüklenmemiş"
-        await event.edit(mod_text, buttons=[[Button.inline("🔙 Geri", b"back")]])
-    
+        await event.edit(mod_text, buttons=[[Button.inline("🔙 Geri", "back")]])
     elif data == "back":
         await event.edit(
             f"**🤖 Komut Paneli** `v{__version__}`",
             buttons=[
-                [Button.inline("📜 Komutlar", b"cmds")],
-                [Button.inline("🔌 Modüller", b"mods")],
-                [Button.inline("❌ Kapat", b"close")]
+                [Button.inline("📜 Komutlar", "cmds")],
+                [Button.inline("🔌 Modüller", "mods")],
+                [Button.inline("❌ Kapat", "close")]
             ]
         )
-    
     elif data == "close":
-        await event.delete()
-
-@client.on(events.CallbackQuery)
-async def userbot_callback_handler(event):
-    data = event.data.decode() if isinstance(event.data, bytes) else event.data
-    
-    if data == "update":
-        await event.edit("🔄 **Güncelleme kontrol ediliyor...**")
-        
-        try:
-            if not os.path.exists(".git"):
-                await event.edit("❌ Bu bir git repository değil!")
-                return
-            
-            repo = git.Repo(".")
-            current_branch = repo.active_branch.name
-            origin = repo.remotes.origin
-            origin.fetch()
-            
-            commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
-            
-            if not commits_behind:
-                await event.answer("✅ Bot zaten güncel!", alert=True)
-                return
-            
-            buttons = [
-                [Button.inline("✅ Güncelle", b"update_confirm"), Button.inline("❌ İptal", b"update_cancel")]
-            ]
-            
-            update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n"
-            update_info += "**Son Değişiklikler:**\n"
-            for i, commit in enumerate(commits_behind[:3], 1):
-                update_info += f"{i}. {commit.summary[:50]}\n"
-            if len(commits_behind) > 3:
-                update_info += f"   _{len(commits_behind) - 3} değişiklik daha..._\n"
-            
-            await event.edit(update_info, buttons=buttons)
-            
-        except Exception as e:
-            await event.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
-    
-    elif data == "update_confirm":
-        await event.edit("⏳ Güncelleniyor...")
-        
-        try:
-            repo = git.Repo(".")
-            current_branch = repo.active_branch.name
-            origin = repo.remotes.origin
-            
-            if repo.is_dirty():
-                repo.git.stash('save', 'Auto-stash before update')
-            
-            origin.pull(current_branch)
-            
-            if os.path.exists("requirements.txt"):
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
-            
-            try:
-                with open("main.py", "r", encoding="utf-8") as f:
-                    for line in f:
-                        if line.startswith("__version__"):
-                            new_version = line.split("=")[1].strip().strip('"').strip("'")
-                            break
-                    else:
-                        new_version = "bilinmiyor"
-            except:
-                new_version = "bilinmiyor"
-            
-            await event.edit(f"✅ **Güncelleme tamamlandı!**\n\n🔢 Eski: `v{__version__}`\n🆕 Yeni: `v{new_version}`\n\n🔄 Yeniden başlatılıyor...")
-            await asyncio.sleep(2)
-            os.execv(sys.executable, [sys.executable] + sys.argv)
-            
-        except Exception as e:
-            await event.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
-    
-    elif data == "update_cancel":
-        await event.edit("❌ Güncelleme iptal edildi.")
-        await asyncio.sleep(2)
-        await event.delete()
-    
-    elif data == "show_modules":
-        if loaded_modules:
-            text = "**🔌 Yüklü Modüller:**\n\n"
-            text += "\n".join([f"• `{name}`" for name in loaded_modules.keys()])
-            text += f"\n\n**Toplam:** {len(loaded_modules)} modül"
-        else:
-            text = "⚠️ Henüz modül yüklenmemiş"
-        
-        buttons = [[Button.inline("🔙 Ana Menü", b"back_to_start")]]
-        await event.edit(text, buttons=buttons)
-    
-    elif data == "ping":
-        start_time_ping = time.time()
-        await event.answer("Ping hesaplanıyor...")
-        end_time_ping = time.time()
-        ping = (end_time_ping - start_time_ping) * 1000
-        
-        uptime = get_readable_time(time.time() - start_time)
-        
-        text = f"**🏓 Pong!**\n\n"
-        text += f"**⚡ Ping:** `{ping:.2f}ms`\n"
-        text += f"**⏱️ Uptime:** `{uptime}`\n"
-        text += f"**🔢 Sürüm:** `v{__version__}`"
-        
-        buttons = [[Button.inline("🔙 Ana Menü", b"back_to_start")]]
-        await event.edit(text, buttons=buttons)
-    
-    elif data == "help_main":
-        text = f"**🤖 Komut Paneli** `v{__version__}`"
-        buttons = [
-            [Button.inline("📜 Komutlar", b"help_cmds")],
-            [Button.inline("🔌 Modüller", b"help_mods")],
-            [Button.inline("🔙 Ana Menü", b"back_to_start")]
-        ]
-        await event.edit(text, buttons=buttons)
-    
-    elif data == "help_cmds":
-        cmd_text = f"**📜 Ana Komutlar** `v{__version__}`\n\n"
-        cmd_text += "• `.start` - Bot bilgileri\n"
-        cmd_text += "• `.ping` - Ping & Uptime\n"
-        cmd_text += "• `.help` - Yardım menüsü\n"
-        cmd_text += "• `.pinstall` - Modül yükle\n"
-        cmd_text += "• `.delpin <isim>` - Modül sil\n"
-        cmd_text += "• `.modules` - Yüklü modüller\n"
-        cmd_text += "• `.listpins` - Tüm pluginler\n"
-        cmd_text += "• `.update` - GitHub'dan güncelle\n"
-        cmd_text += "• `.hardupdate` - Zorla güncelle\n"
-        cmd_text += "• `.gitpull` - Manuel pull\n"
-        cmd_text += "• `.restart` - Yeniden başlat"
-        
-        buttons = [[Button.inline("🔙 Geri", b"help_main")]]
-        await event.edit(cmd_text, buttons=buttons)
-    
-    elif data == "help_mods":
-        if loaded_modules:
-            mod_text = "**🔌 Yüklü Modüller:**\n\n"
-            mod_text += "\n".join([f"• `{name}`" for name in loaded_modules.keys()])
-            mod_text += f"\n\n**Toplam:** {len(loaded_modules)} modül"
-        else:
-            mod_text = "⚠️ Henüz modül yüklenmemiş"
-        
-        buttons = [[Button.inline("🔙 Geri", b"help_main")]]
-        await event.edit(mod_text, buttons=buttons)
-    
-    elif data == "back_to_start":
-        uptime = get_readable_time(time.time() - start_time)
-        me = await client.get_me()
-        
-        text = f"**🤖 KingTG UserBot**\n\n"
-        text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
-        text += f"**📱 Telefon:** `+{me.phone}`\n"
-        text += f"**🆔 ID:** `{me.id}`\n"
-        text += f"**📍 Username:** @{me.username}\n\n"
-        text += f"**🔢 Sürüm:** `v{__version__}`\n"
-        text += f"**⏱️ Uptime:** `{uptime}`\n"
-        text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
-        text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
-        text += f"**💻 Repo:** `{__repo__}`\n"
-        text += f"**👨‍💻 Geliştirici:** `{__author__}`"
-        
-        buttons = [
-            [Button.inline("🔄 Güncelle", b"update"), Button.inline("🔌 Modüller", b"show_modules")],
-            [Button.inline("🏓 Ping", b"ping"), Button.inline("❓ Yardım", b"help_main")],
-            [Button.inline("🔁 Yeniden Başlat", b"restart_confirm")]
-        ]
-        
-        await event.edit(text, buttons=buttons)
-    
-    elif data == "restart_confirm":
-        buttons = [
-            [Button.inline("✅ Evet", b"restart_yes"), Button.inline("❌ Hayır", b"restart_no")]
-        ]
-        await event.edit("⚠️ **Botu yeniden başlatmak istediğinize emin misiniz?**", buttons=buttons)
-    
-    elif data == "restart_yes":
-        await event.edit("🔄 Bot yeniden başlatılıyor...")
-        await asyncio.sleep(1)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-    
-    elif data == "restart_no":
-        await event.answer("❌ İptal edildi", alert=False)
         await event.delete()
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.start$'))
@@ -403,14 +221,7 @@ async def start(e):
     text += f"**💻 Repo:** `{__repo__}`\n"
     text += f"**👨‍💻 Geliştirici:** `{__author__}`"
     
-    buttons = [
-        [Button.inline("🔄 Güncelle", b"update"), Button.inline("🔌 Modüller", b"show_modules")],
-        [Button.inline("🏓 Ping", b"ping"), Button.inline("❓ Yardım", b"help_main")],
-        [Button.inline("🔁 Yeniden Başlat", b"restart_confirm")]
-    ]
-    
-    await e.reply(text, buttons=buttons)
-    await e.delete()
+    await e.edit(text)
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ping$'))
 async def ping_cmd(e):
