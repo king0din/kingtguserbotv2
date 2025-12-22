@@ -615,64 +615,76 @@ async def hard_update(e):
         
         await asyncio.sleep(2)
         os.execv(sys.executable, [sys.executable] + sys.argv)
+        
     except Exception as e:
         await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
-        @client.on(events.NewMessage(outgoing=True, pattern=r'^.gitpull$'))
-        async def git_pull(e):
-            
-            msg = await e.edit("🔄 Git pull yapılıyor...")
-            try:
-                if not os.path.exists(".git"):
-                    await msg.edit("❌ Bu bir git repository değil!")
-                    return
-                    repo = git.Repo(".")
-                    origin = repo.remotes.origin
-                    current_branch = repo.active_branch.name
-                    origin.fetch()
-                    result = origin.pull(current_branch)
-                    
-                    if result[0].flags & result[0].HEAD_UPTODATE:
-                        await msg.edit("✅ Zaten güncel!")
-                    else:
-                        await msg.edit(f"✅ Pull tamamlandı!\n\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n\n⚠️ Değişikliklerin aktif olması için `.restart` kullanın")
-            except Exception as e:
-                await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
-                @client.on(events.NewMessage(outgoing=True, pattern=r'^.restart$'))
-                async def restart_bot(e):
-                    await e.edit("🔄 Bot yeniden başlatılıyor...")
-                    await asyncio.sleep(1)
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
-                    async def main():
-                        log("=" * 50)
-                        log(f"🤖 KingTG UserBot v{version}")
-                        log(f"👨‍💻 Geliştirici: {author}")
-                        log(f"💻 Repo: {repo}")
-                        log("=" * 50)
-                        log("🔄 Userbot başlatılıyor...")
-                        await client.start()
-                        me = await client.get_me()
-                        log(f"✅ Userbot bağlandı: {me.first_name} (@{me.username})")
-                        log("🔄 Inline bot başlatılıyor...")
-                        await bot.start(bot_token=BOT_TOKEN)
-                        bot_me = await bot.get_me()
-                        log(f"✅ Inline bot bağlandı: @{bot_me.username}")
-                        
-                        if not os.path.exists("modules"):
-                            os.makedirs("modules")
-                            log("📁 modules/ klasörü oluşturuldu")
-                            log("🔄 Modüller yükleniyor...")
-                            module_files = glob.glob("modules/*.py")
-                            if module_files:
-                                for f in module_files:
-                                    name = os.path.basename(f).replace('.py', '')
-                                    await load_plugins(name)
-                            else:
-                                log("⚠️ modules/ klasöründe modül bulunamadı")
-                                log("=" * 50)
-                                log(f"✅ Bot Hazır! Sürüm: v{__version__}")
-                                log(f"🔌 Yüklü Modüller: {len(loaded_modules)}")
-                                log(f"📱 Komutlar için .help yazın")
-                                log("=" * 50)
-                                await client.run_until_disconnected()
-                                if name == 'main':
-                                    asyncio.get_event_loop().run_until_complete(main())
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull$'))
+async def git_pull(e):
+    msg = await e.edit("🔄 Git pull yapılıyor...")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        origin.fetch()
+        result = origin.pull(current_branch)
+        
+        if result[0].flags & result[0].HEAD_UPTODATE:
+            await msg.edit("✅ Zaten güncel!")
+        else:
+            await msg.edit(f"✅ Pull tamamlandı!\n\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n\n⚠️ Değişikliklerin aktif olması için `.restart` kullanın")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
+async def restart_bot(e):
+    await e.edit("🔄 Bot yeniden başlatılıyor...")
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def main():
+    log("=" * 50)
+    log(f"🤖 KingTG UserBot v{__version__}")
+    log(f"👨‍💻 Geliştirici: {__author__}")
+    log(f"💻 Repo: {__repo__}")
+    log("=" * 50)
+    
+    log("🔄 Userbot başlatılıyor...")
+    await client.start()
+    me = await client.get_me()
+    log(f"✅ Userbot bağlandı: {me.first_name} (@{me.username})")
+    
+    log("🔄 Inline bot başlatılıyor...")
+    await bot.start(bot_token=BOT_TOKEN)
+    bot_me = await bot.get_me()
+    log(f"✅ Inline bot bağlandı: @{bot_me.username}")
+    
+    if not os.path.exists("modules"):
+        os.makedirs("modules")
+        log("📁 modules/ klasörü oluşturuldu")
+    
+    log("🔄 Modüller yükleniyor...")
+    module_files = glob.glob("modules/*.py")
+    if module_files:
+        for f in module_files:
+            name = os.path.basename(f).replace('.py', '')
+            await load_plugins(name)
+    else:
+        log("⚠️ modules/ klasöründe modül bulunamadı")
+    
+    log("=" * 50)
+    log(f"✅ Bot Hazır! Sürüm: v{__version__}")
+    log(f"🔌 Yüklü Modüller: {len(loaded_modules)}")
+    log(f"📱 Komutlar için .help yazın")
+    log("=" * 50)
+    
+    await client.run_until_disconnected()
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())
