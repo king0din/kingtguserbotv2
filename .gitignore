@@ -1,0 +1,6 @@
+.env
+userbot_session.session
+userbot_session.session-journal
+__pycache__/
+*.pyc
+modules/
