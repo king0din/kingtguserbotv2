@@ -13,9 +13,9 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.0"
-__author__ = "KingTG"
-__repo__ = "github.com/yourusername/kingtguserbotv2"
+__version__ = "1.0.3"
+__author__ = "@KingOdi"
+__repo__ = "şuanlık özeldir"
 # ============================================
 
 load_dotenv()
@@ -211,7 +211,6 @@ async def start(e):
     
     text = f"**🤖 KingTG UserBot**\n\n"
     text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
-    text += f"**📱 Telefon:** `+{me.phone}`\n"
     text += f"**🆔 ID:** `{me.id}`\n"
     text += f"**📍 Username:** @{me.username}\n\n"
     text += f"**🔢 Sürüm:** `v{__version__}`\n"
