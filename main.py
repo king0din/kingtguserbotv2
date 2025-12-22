@@ -20,28 +20,38 @@ GIT_REPO = os.getenv("GIT_REPO_URL")
 client = TelegramClient('userbot_session', API_ID, API_HASH)
 bot = TelegramClient('bot_session', API_ID, API_HASH)
 
-# --- YARDIMCI FONKSİYONLAR ---
+# --- LOG FONKSİYONU ---
 def log(text):
     print(f"\033[92m[BİLGİ]\033[0m {text}")
 
+# --- DÜZELTİLMİŞ MODÜL YÜKLEYİCİ ---
 async def load_plugins(plugin_name):
-    """Modülleri güvenli bir şekilde yükler ve eventleri kaydeder."""
+    """Modülleri yükler ve register ile işaretlenmiş eventleri ekler."""
     try:
         path = f"modules/{plugin_name}.py"
         spec = importlib.util.spec_from_file_location(plugin_name, path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         
-        # Modül içindeki her şeyi tara
+        # Modül içindeki her nesneyi tara
+        count = 0
         for name in dir(mod):
             obj = getattr(mod, name)
-            # Eğer fonksiyon @events.register ile işaretlendiyse
-            if hasattr(obj, 'events'): 
-                client.add_event_handler(obj, obj.events)
+            
+            # KRİTİK DÜZELTME: Nesnenin bir events.register örneği olup olmadığını kontrol et
+            if isinstance(obj, events.register):
+                client.add_event_handler(obj)
+                count += 1
         
-        return True
+        if count > 0:
+            log(f"✅ {plugin_name} yüklendi ({count} komut)")
+            return True
+        else:
+            log(f"⚠️ {plugin_name} yüklendi ama çalıştırılabilir komut bulunamadı.")
+            return False
+
     except Exception as e:
-        print(f"Hata ({plugin_name}): {e}")
+        print(f"❌ Hata ({plugin_name}): {e}")
         return False
 
 # --- YARDIMCI BOT (INLINE) ---
@@ -79,9 +89,12 @@ async def start_cmd(event):
 @client.on(events.NewMessage(outgoing=True, pattern=r'\.help'))
 async def help_cmd(event):
     bot_user = await bot.get_me()
-    results = await client.inline_query(bot_user.username, "help_menu")
-    await results[0].click(event.chat_id)
-    await event.delete()
+    try:
+        results = await client.inline_query(bot_user.username, "help_menu")
+        await results[0].click(event.chat_id)
+        await event.delete()
+    except Exception as e:
+        await event.edit(f"⚠️ Hata: Inline bot cevap vermedi. `{e}`")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'\.update'))
 async def update_cmd(event):
@@ -94,7 +107,6 @@ async def update_cmd(event):
     except Exception as e:
         await event.edit(f"❌ Hata: `{e}`")
 
-# --- GELİŞMİŞ PINSTALL (DÜZELTİLEN KISIM) ---
 @client.on(events.NewMessage(outgoing=True, pattern=r'\.pinstall'))
 async def pinstall_cmd(event):
     if not event.reply_to_msg_id:
@@ -108,17 +120,18 @@ async def pinstall_cmd(event):
         file_path = await reply.download_media(file="modules/")
         mod_name = os.path.basename(file_path).replace('.py', '')
         
-        await event.edit(f"📥 `{mod_name}` yükleniyor...")
+        await event.edit(f"📥 `{mod_name}` işleniyor...")
         
+        # Dosya indirildikten sonra yüklemeyi dene
         if await load_plugins(mod_name):
-            await event.edit(f"✅ `{mod_name}` başarıyla yüklendi ve aktif edildi!")
+            await event.edit(f"✅ `{mod_name}` başarıyla yüklendi!")
         else:
-            await event.edit(f"❌ `{mod_name}` yüklenirken hata oluştu.")
+            await event.edit(f"⚠️ `{mod_name}` yüklendi ama içinde aktif komut bulunamadı.")
     else:
         await event.edit("❌ Geçersiz dosya.")
 
-# --- BAŞLATMA VE MODÜLLERİ YÜKLEME ---
-log("Bot başlatılıyor...")
+# --- BAŞLATMA ---
+print("--- Userbot Başlatılıyor ---")
 client.start()
 bot.start(bot_token=BOT_TOKEN)
 
@@ -129,10 +142,11 @@ if not os.path.exists("modules"):
 mod_files = glob.glob("modules/*.py")
 log(f"Bulunan modül sayısı: {len(mod_files)}")
 
+# Mevcut event döngüsünde yükleme yapıyoruz
+loop = asyncio.get_event_loop()
 for file in mod_files:
     mod_name = os.path.basename(file).replace(".py", "")
-    # Asenkron fonksiyonu event döngüsünde çalıştır
-    client.loop.run_until_complete(load_plugins(mod_name))
+    loop.run_until_complete(load_plugins(mod_name))
 
 log("Sistem hazır!")
 client.run_until_disconnected()
