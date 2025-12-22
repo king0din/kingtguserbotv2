@@ -389,7 +389,11 @@ async def callback_handler(event):
         os.execv(sys.executable, [sys.executable] + sys.argv)
     
     elif data == "close":
-        await event.delete()
+        # Inline mesajlar silinemez, bunun yerine düzenle
+        try:
+            await event.edit("❌ **Menü kapatıldı.**\n\n💡 Tekrar açmak için `.start` yazın.")
+        except:
+            await event.answer("Menü kapatıldı!", alert=True)
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.start$'))
 async def start(e):
