@@ -372,6 +372,20 @@ async def load_plugins(plugin_name):
         except:
             pass
         
+        # Bot handler'ları için register_bot fonksiyonu kontrol et
+        if hasattr(mod, 'register_bot') and callable(mod.register_bot):
+            try:
+                mod.register_bot(bot, client)
+                log(f"  ✓ {plugin_name} bot handler'ları yüklendi")
+                if plugin_name not in loaded_modules:
+                    loaded_modules[plugin_name] = mod
+                    count += 1
+            except Exception as bot_err:
+                log(f"  ⚠️ {plugin_name} bot handler hatası: {bot_err}")
+        
+        if count > 0:
+            return True
+        
         funcs = [n for n, o in inspect.getmembers(mod) if inspect.iscoroutinefunction(o)]
         log(f"⚠️ {plugin_name} yüklendi ama event handler bulunamadı")
         if funcs:
