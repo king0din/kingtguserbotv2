@@ -38,42 +38,46 @@ async def load_plugins(plugin_name):
         sys.modules[plugin_name] = mod
         spec.loader.exec_module(mod)
         
+        # YÖNTEM 1: register() fonksiyonu var mı kontrol et (ÖNERİLEN)
+        if hasattr(mod, 'register') and callable(mod.register):
+            mod.register(client)  # Client'ı modüle gönder
+            loaded_modules[plugin_name] = mod
+            log(f"✅ {plugin_name} yüklendi (register fonksiyonu)")
+            return True
+        
+        # YÖNTEM 2: EventBuilder nesnelerini ara
         count = 0
-        # Modüldeki tüm nesneleri tara
         for name, obj in inspect.getmembers(mod):
             if not callable(obj) or name.startswith('_'):
                 continue
-                
-            # 1. Yöntem: Fonksiyonun kendisi event decorator'ı ile süslenmiş
-            if inspect.iscoroutinefunction(obj) and hasattr(obj, 'telethon_event'):
+            
+            if isinstance(obj, events.common.EventBuilder):
                 client.add_event_handler(obj)
                 count += 1
-                log(f"  ✓ {name} eklendi (decorator ile)")
-            
-            # 2. Yöntem: @events.register() ile kayıtlı
-            elif hasattr(obj, '__telethon_registered__'):
-                client.add_event_handler(obj)
-                count += 1
-                log(f"  ✓ {name} eklendi (register ile)")
-            
-            # 3. Yöntem: @client.on() benzeri decorator
-            elif hasattr(obj, '__telethon_events__'):
-                for event in obj.__telethon_events__:
-                    client.add_event_handler(obj, event)
-                    count += 1
-                log(f"  ✓ {name} eklendi (events ile)")
+                log(f"  ✓ {name} eklendi (EventBuilder)")
         
         if count > 0:
             loaded_modules[plugin_name] = mod
             log(f"✅ {plugin_name} yüklendi ({count} handler)")
             return True
-        else:
-            # Modülde ne var görelim
-            funcs = [n for n, o in inspect.getmembers(mod) if inspect.iscoroutinefunction(o)]
-            log(f"⚠️ {plugin_name} yüklendi ama event handler bulunamadı")
-            if funcs:
-                log(f"   Bulunan async fonksiyonlar: {', '.join(funcs)}")
-            return False
+        
+        # YÖNTEM 3: __plugin_handlers__ listesi var mı?
+        if hasattr(mod, '__plugin_handlers__'):
+            for handler in mod.__plugin_handlers__:
+                client.add_event_handler(handler)
+                count += 1
+            if count > 0:
+                loaded_modules[plugin_name] = mod
+                log(f"✅ {plugin_name} yüklendi ({count} handler)")
+                return True
+        
+        # Hiçbir yöntem çalışmadı
+        funcs = [n for n, o in inspect.getmembers(mod) if inspect.iscoroutinefunction(o)]
+        log(f"⚠️ {plugin_name} yüklendi ama event handler bulunamadı")
+        if funcs:
+            log(f"   Bulunan async fonksiyonlar: {', '.join(funcs)}")
+            log(f"   💡 İpucu: Modülde register(client) fonksiyonu ekleyin")
+        return False
             
     except Exception as e:
         log(f"❌ {plugin_name} yüklenemedi: {e}")
