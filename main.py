@@ -13,12 +13,183 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.4"
+__version__ = "1.0.5"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
 
 load_dotenv()
+
+# ============================================
+# ESKİ USERBOT UYUMLULUK KATMANI
+# ============================================
+def setup_compatibility():
+    """Eski userbot pluginleri için uyumluluk katmanı oluştur"""
+    
+    # userbot klasörünü oluştur
+    if not os.path.exists("userbot"):
+        os.makedirs("userbot")
+        log("📁 userbot/ uyumluluk klasörü oluşturuldu")
+    
+    # __init__.py
+    init_content = '''# KingTG UserBot - Uyumluluk Katmanı
+# SedUserBot, AsenaUserBot vb. pluginleri destekler
+'''
+    with open("userbot/__init__.py", "w", encoding="utf-8") as f:
+        f.write(init_content)
+    
+    # events.py - @register decorator
+    events_content = '''# KingTG UserBot - Events Uyumluluk Modülü
+from telethon import events
+import functools
+
+_client = None
+_pending_handlers = []
+
+def set_client(client):
+    global _client
+    _client = client
+    for handler, event in _pending_handlers:
+        _client.add_event_handler(handler, event)
+    _pending_handlers.clear()
+
+def register(outgoing=True, incoming=False, pattern=None, **kwargs):
+    def decorator(func):
+        event = events.NewMessage(
+            outgoing=outgoing,
+            incoming=incoming,
+            pattern=pattern,
+            **kwargs
+        )
+        
+        @functools.wraps(func)
+        async def wrapper(event):
+            return await func(event)
+        
+        if _client is not None:
+            _client.add_event_handler(wrapper, event)
+        else:
+            _pending_handlers.append((wrapper, event))
+        
+        return wrapper
+    return decorator
+
+def on(event):
+    def decorator(func):
+        if _client is not None:
+            _client.add_event_handler(func, event)
+        else:
+            _pending_handlers.append((func, event))
+        return func
+    return decorator
+'''
+    with open("userbot/events.py", "w", encoding="utf-8") as f:
+        f.write(events_content)
+    
+    # cmdhelp.py - CmdHelp sınıfı
+    cmdhelp_content = '''# KingTG UserBot - CmdHelp Uyumluluk Modülü
+_help_dict = {}
+
+class CmdHelp:
+    def __init__(self, module_name):
+        self.module_name = module_name
+        self.commands = []
+        self.info = None
+    
+    def add_command(self, command, params=None, description=None, example=None):
+        self.commands.append({
+            'command': command,
+            'params': params,
+            'description': description,
+            'example': example
+        })
+        return self
+    
+    def add_info(self, info):
+        self.info = info
+        return self
+    
+    def add(self):
+        _help_dict[self.module_name] = {
+            'commands': self.commands,
+            'info': self.info
+        }
+        return self
+
+def get_all_help():
+    return _help_dict
+
+def get_help(module_name):
+    return _help_dict.get(module_name)
+
+def format_help(module_name):
+    help_data = get_help(module_name)
+    if not help_data:
+        return None
+    
+    text = f"**📖 {module_name} Yardım**\\n\\n"
+    
+    for cmd in help_data['commands']:
+        text += f"• `.{cmd['command']}`"
+        if cmd['params']:
+            text += f" `{cmd['params']}`"
+        text += "\\n"
+        if cmd['description']:
+            text += f"  ➥ {cmd['description']}\\n"
+        if cmd['example']:
+            text += f"  📝 Örnek: `{cmd['example']}`\\n"
+        text += "\\n"
+    
+    if help_data['info']:
+        text += f"ℹ️ {help_data['info']}"
+    
+    return text
+'''
+    with open("userbot/cmdhelp.py", "w", encoding="utf-8") as f:
+        f.write(cmdhelp_content)
+    
+    # utils.py - Yardımcı fonksiyonlar
+    utils_content = '''# KingTG UserBot - Utils Uyumluluk Modülü
+import asyncio
+import subprocess
+
+async def edit_or_reply(event, text, **kwargs):
+    try:
+        return await event.edit(text, **kwargs)
+    except:
+        return await event.reply(text, **kwargs)
+
+async def edit_delete(event, text, time=5):
+    msg = await event.edit(text)
+    await asyncio.sleep(time)
+    await msg.delete()
+
+def run_command(cmd):
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.stdout or result.stderr
+    except Exception as e:
+        return str(e)
+
+async def run_command_async(cmd):
+    proc = await asyncio.create_subprocess_shell(
+        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    return stdout.decode() or stderr.decode()
+
+TEMP_DIR = "/tmp"
+CMD_HELP = {}
+CMD_LIST = {}
+SUDO_LIST = []
+BLACKLIST = []
+'''
+    with open("userbot/utils.py", "w", encoding="utf-8") as f:
+        f.write(utils_content)
+    
+    log("✅ Uyumluluk katmanı hazır (userbot.events, userbot.cmdhelp, userbot.utils)")
+
+# ============================================
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -226,6 +397,7 @@ async def callback_handler(event):
         cmd_text += "• `.delpin <isim>` - Modül sil\n"
         cmd_text += "• `.modules` - Yüklü modüller\n"
         cmd_text += "• `.listpins` - Tüm pluginler\n"
+        cmd_text += "• `.pluginhelp` - Plugin yardımları\n"
         cmd_text += "• `.update` - GitHub'dan güncelle\n"
         cmd_text += "• `.hardupdate` - Zorla güncelle\n"
         cmd_text += "• `.gitpull` - Manuel pull\n"
@@ -525,6 +697,37 @@ async def listpins(e):
     
     await e.edit(text)
 
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pluginhelp(?:\s+(\S+))?$'))
+async def plugin_help(e):
+    """Plugin yardımlarını göster"""
+    try:
+        from userbot.cmdhelp import get_all_help, format_help
+        
+        plugin_name = e.pattern_match.group(1)
+        
+        if plugin_name:
+            # Belirli plugin yardımı
+            help_text = format_help(plugin_name)
+            if help_text:
+                await e.edit(help_text)
+            else:
+                await e.edit(f"❌ `{plugin_name}` için yardım bulunamadı.")
+        else:
+            # Tüm plugin yardımları
+            all_help = get_all_help()
+            if all_help:
+                text = "**📚 Plugin Yardımları**\n\n"
+                for name in sorted(all_help.keys()):
+                    cmd_count = len(all_help[name]['commands'])
+                    text += f"• `{name}` ({cmd_count} komut)\n"
+                text += f"\n**Toplam:** {len(all_help)} plugin\n"
+                text += "\n💡 Detay için: `.pluginhelp <plugin_adı>`"
+                await e.edit(text)
+            else:
+                await e.edit("⚠️ Henüz yardım kaydı olan plugin yok.")
+    except Exception as err:
+        await e.edit(f"❌ Hata: {err}")
+
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
 async def update_bot(e):
     msg = await e.edit("🔄 **Güncelleme kontrol ediliyor...**")
@@ -690,10 +893,22 @@ async def main():
     log(f"💻 Repo: {__repo__}")
     log("=" * 50)
     
+    # Uyumluluk katmanını kur
+    log("🔧 Uyumluluk katmanı kuruluyor...")
+    setup_compatibility()
+    
     log("🔄 Userbot başlatılıyor...")
     await client.start()
     me = await client.get_me()
     log(f"✅ Userbot bağlandı: {me.first_name} (@{me.username})")
+    
+    # Uyumluluk modülüne client'ı ver
+    try:
+        from userbot import events as compat_events
+        compat_events.set_client(client)
+        log("✅ Uyumluluk katmanı aktif")
+    except Exception as e:
+        log(f"⚠️ Uyumluluk katmanı yüklenemedi: {e}")
     
     log("🔄 Inline bot başlatılıyor...")
     await bot.start(bot_token=BOT_TOKEN)
