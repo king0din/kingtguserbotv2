@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.5"
+__version__ = "1.0.7"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
@@ -330,6 +330,15 @@ async def load_plugins(plugin_name):
             mod.register(client)
             loaded_modules[plugin_name] = mod
             log(f"✅ {plugin_name} yüklendi (register fonksiyonu)")
+            
+            # Bot handler'ları da kaydet
+            if hasattr(mod, 'register_bot') and callable(mod.register_bot):
+                try:
+                    mod.register_bot(bot, client)
+                    log(f"  ✓ {plugin_name} bot handler'ları yüklendi")
+                except Exception as bot_err:
+                    log(f"  ⚠️ {plugin_name} bot handler hatası: {bot_err}")
+            
             return True
         
         count = 0
