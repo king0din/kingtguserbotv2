@@ -211,7 +211,6 @@ async def start(e):
     
     text = f"**🤖 KingTG UserBot**\n\n"
     text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
-    text += f"**📱 Telefon:** `+{me.phone}`\n"
     text += f"**🆔 ID:** `{me.id}`\n"
     text += f"**📍 Username:** @{me.username}\n\n"
     text += f"**🔢 Sürüm:** `v{__version__}`\n"
