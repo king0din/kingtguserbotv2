@@ -13,12 +13,11 @@ load_dotenv()
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO", "")  # Örnek: "username/repo"
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 
 client = TelegramClient('userbot_session', API_ID, API_HASH)
 bot = TelegramClient('bot_session', API_ID, API_HASH)
 
-# Yüklenen modülleri takip et
 loaded_modules = {}
 
 def log(text):
@@ -40,7 +39,6 @@ def check_requirements(path):
     try:
         with open(path, 'r', encoding='utf-8') as f:
             for line in f:
-                # # requires: paket1, paket2 formatını ara
                 if line.strip().startswith('# requires:') or line.strip().startswith('# requirements:'):
                     packages = line.split(':', 1)[1].strip().split(',')
                     return [pkg.strip() for pkg in packages if pkg.strip()]
@@ -55,7 +53,6 @@ async def load_plugins(plugin_name):
             log(f"❌ {path} bulunamadı")
             return False
         
-        # Modül gereksinimlerini kontrol et
         required_packages = check_requirements(path)
         if required_packages:
             log(f"🔍 {plugin_name} için gereksinimler: {', '.join(required_packages)}")
@@ -68,7 +65,6 @@ async def load_plugins(plugin_name):
                         log(f"❌ {plugin_name} yüklenemedi: {pkg} kurulamadı")
                         return False
         
-        # Modülü yükle
         spec = importlib.util.spec_from_file_location(plugin_name, path)
         if spec is None or spec.loader is None:
             log(f"❌ {plugin_name} spec oluşturulamadı")
@@ -80,24 +76,20 @@ async def load_plugins(plugin_name):
         try:
             spec.loader.exec_module(mod)
         except ImportError as e:
-            # Import hatası varsa, eksik paketi bulmaya çalış
             missing = str(e).split("'")[1] if "'" in str(e) else str(e)
             log(f"⚠️ {plugin_name} için {missing} gerekli, kuruluyor...")
             if install_package(missing):
-                # Tekrar dene
                 importlib.reload(mod)
             else:
                 log(f"❌ {plugin_name} yüklenemedi: {missing} kurulamadı")
                 return False
         
-        # YÖNTEM 1: register() fonksiyonu var mı kontrol et (ÖNERİLEN)
         if hasattr(mod, 'register') and callable(mod.register):
-            mod.register(client)  # Client'ı modüle gönder
+            mod.register(client)
             loaded_modules[plugin_name] = mod
             log(f"✅ {plugin_name} yüklendi (register fonksiyonu)")
             return True
         
-        # YÖNTEM 2: EventBuilder nesnelerini ara
         count = 0
         for name, obj in inspect.getmembers(mod):
             if not callable(obj) or name.startswith('_'):
@@ -113,7 +105,6 @@ async def load_plugins(plugin_name):
             log(f"✅ {plugin_name} yüklendi ({count} handler)")
             return True
         
-        # YÖNTEM 3: __plugin_handlers__ listesi var mı?
         if hasattr(mod, '__plugin_handlers__'):
             for handler in mod.__plugin_handlers__:
                 client.add_event_handler(handler)
@@ -123,7 +114,6 @@ async def load_plugins(plugin_name):
                 log(f"✅ {plugin_name} yüklendi ({count} handler)")
                 return True
         
-        # Hiçbir yöntem çalışmadı
         funcs = [n for n, o in inspect.getmembers(mod) if inspect.iscoroutinefunction(o)]
         log(f"⚠️ {plugin_name} yüklendi ama event handler bulunamadı")
         if funcs:
@@ -137,7 +127,6 @@ async def load_plugins(plugin_name):
         traceback.print_exc()
         return False
 
-# --- INLINE BOT ---
 @bot.on(events.InlineQuery)
 async def inline_handler(event):
     if event.text == "help_menu":
@@ -185,7 +174,6 @@ async def callback_handler(event):
     elif data == "close":
         await event.delete()
 
-# --- USERBOT ---
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.start$'))
 async def start(e):
     await e.edit("🚀 **Userbot Online!**")
@@ -200,56 +188,7 @@ async def help_cmd(e):
     except Exception as err:
         await e.edit(f"❌ Hata: {err}")
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.modules
-
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
-async def pinstall(e):
-    reply = await e.get_reply_message()
-    if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
-        if not os.path.exists("modules"):
-            os.makedirs("modules")
-        
-        path = await reply.download_media(file="modules/")
-        name = os.path.basename(path).replace('.py', '')
-        
-        await e.edit(f"⏳ `{name}` yükleniyor...")
-        
-        if await load_plugins(name):
-            await e.edit(f"✅ `{name}` başarıyla yüklendi ve aktif!")
-        else:
-            await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
-    else:
-        await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
-
-async def main():
-    log("🔄 Userbot başlatılıyor...")
-    await client.start()
-    log("✅ Userbot bağlandı")
-    
-    log("🔄 Inline bot başlatılıyor...")
-    await bot.start(bot_token=BOT_TOKEN)
-    log("✅ Inline bot bağlandı")
-    
-    # Modüller klasörünü oluştur
-    if not os.path.exists("modules"):
-        os.makedirs("modules")
-        log("📁 modules/ klasörü oluşturuldu")
-    
-    # Mevcut modülleri yükle
-    log("🔄 Modüller yükleniyor...")
-    module_files = glob.glob("modules/*.py")
-    if module_files:
-        for f in module_files:
-            name = os.path.basename(f).replace('.py', '')
-            await load_plugins(name)
-    else:
-        log("⚠️ modules/ klasöründe modül bulunamadı")
-    
-    log("✅ Bot Hazır!")
-    await client.run_until_disconnected()
-
-if __name__ == '__main__':
-    asyncio.get_event_loop().run_until_complete(main())))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.modules$'))
 async def list_modules(e):
     if loaded_modules:
         text = "**🔌 Yüklü Modüller:**\n\n"
@@ -258,8 +197,6 @@ async def list_modules(e):
         text = "⚠️ Henüz modül yüklenmemiş"
     await e.edit(text)
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.update
-
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
 async def pinstall(e):
     reply = await e.get_reply_message()
@@ -279,41 +216,12 @@ async def pinstall(e):
     else:
         await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
 
-async def main():
-    log("🔄 Userbot başlatılıyor...")
-    await client.start()
-    log("✅ Userbot bağlandı")
-    
-    log("🔄 Inline bot başlatılıyor...")
-    await bot.start(bot_token=BOT_TOKEN)
-    log("✅ Inline bot bağlandı")
-    
-    # Modüller klasörünü oluştur
-    if not os.path.exists("modules"):
-        os.makedirs("modules")
-        log("📁 modules/ klasörü oluşturuldu")
-    
-    # Mevcut modülleri yükle
-    log("🔄 Modüller yükleniyor...")
-    module_files = glob.glob("modules/*.py")
-    if module_files:
-        for f in module_files:
-            name = os.path.basename(f).replace('.py', '')
-            await load_plugins(name)
-    else:
-        log("⚠️ modules/ klasöründe modül bulunamadı")
-    
-    log("✅ Bot Hazır!")
-    await client.run_until_disconnected()
-
-if __name__ == '__main__':
-    asyncio.get_event_loop().run_until_complete(main())))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
 async def update_bot(e):
     """GitHub'dan bot güncellemesi"""
     msg = await e.edit("🔄 **Güncelleme kontrol ediliyor...**")
     
     try:
-        # Git repo kontrolü
         if not os.path.exists(".git"):
             await msg.edit("❌ Bu bir git repository değil!\n\n"
                           "**Manuel Kurulum:**\n"
@@ -323,11 +231,7 @@ async def update_bot(e):
             return
         
         repo = git.Repo(".")
-        
-        # Mevcut branch'i al
         current_branch = repo.active_branch.name
-        
-        # Değişiklikleri kontrol et
         origin = repo.remotes.origin
         origin.fetch()
         
@@ -339,7 +243,6 @@ async def update_bot(e):
                           f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`")
             return
         
-        # Güncelleme mesajı
         update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n"
         update_info += "**Son Değişiklikler:**\n"
         for i, commit in enumerate(commits_behind[:3], 1):
@@ -350,24 +253,20 @@ async def update_bot(e):
         update_info += "\n⏳ Güncelleniyor..."
         await msg.edit(update_info)
         
-        # Stash local changes
         if repo.is_dirty():
             repo.git.stash('save', 'Auto-stash before update')
             stashed = True
         else:
             stashed = False
         
-        # Pull latest changes
         origin.pull(current_branch)
         
-        # Stash'i geri al
         if stashed:
             try:
                 repo.git.stash('pop')
             except:
                 pass
         
-        # Requirements güncelle
         if os.path.exists("requirements.txt"):
             await msg.edit("📦 Bağımlılıklar güncelleniyor...")
             subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
@@ -377,8 +276,6 @@ async def update_bot(e):
                       "🔄 Bot yeniden başlatılıyor...")
         
         await asyncio.sleep(2)
-        
-        # Botu yeniden başlat
         os.execv(sys.executable, [sys.executable] + sys.argv)
         
     except git.exc.GitCommandError as e:
@@ -387,56 +284,7 @@ async def update_bot(e):
     except Exception as e:
         await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.hardupdate
-
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
-async def pinstall(e):
-    reply = await e.get_reply_message()
-    if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
-        if not os.path.exists("modules"):
-            os.makedirs("modules")
-        
-        path = await reply.download_media(file="modules/")
-        name = os.path.basename(path).replace('.py', '')
-        
-        await e.edit(f"⏳ `{name}` yükleniyor...")
-        
-        if await load_plugins(name):
-            await e.edit(f"✅ `{name}` başarıyla yüklendi ve aktif!")
-        else:
-            await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
-    else:
-        await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
-
-async def main():
-    log("🔄 Userbot başlatılıyor...")
-    await client.start()
-    log("✅ Userbot bağlandı")
-    
-    log("🔄 Inline bot başlatılıyor...")
-    await bot.start(bot_token=BOT_TOKEN)
-    log("✅ Inline bot bağlandı")
-    
-    # Modüller klasörünü oluştur
-    if not os.path.exists("modules"):
-        os.makedirs("modules")
-        log("📁 modules/ klasörü oluşturuldu")
-    
-    # Mevcut modülleri yükle
-    log("🔄 Modüller yükleniyor...")
-    module_files = glob.glob("modules/*.py")
-    if module_files:
-        for f in module_files:
-            name = os.path.basename(f).replace('.py', '')
-            await load_plugins(name)
-    else:
-        log("⚠️ modules/ klasöründe modül bulunamadı")
-    
-    log("✅ Bot Hazır!")
-    await client.run_until_disconnected()
-
-if __name__ == '__main__':
-    asyncio.get_event_loop().run_until_complete(main())))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.hardupdate$'))
 async def hard_update(e):
     """Zorla güncelleme (tüm local değişiklikleri siler)"""
     msg = await e.edit("⚠️ **HARD UPDATE**\n\n"
@@ -446,11 +294,10 @@ async def hard_update(e):
     await asyncio.sleep(5)
     
     try:
-        # Mesaj silinmiş mi kontrol et
         try:
             await msg.edit("🔄 Hard update başlatılıyor...")
         except:
-            return  # Mesaj silindi, iptal
+            return
         
         if not os.path.exists(".git"):
             await msg.edit("❌ Bu bir git repository değil!")
@@ -460,14 +307,10 @@ async def hard_update(e):
         origin = repo.remotes.origin
         current_branch = repo.active_branch.name
         
-        # Tüm değişiklikleri sil
         repo.git.reset('--hard', f'origin/{current_branch}')
         repo.git.clean('-fd')
-        
-        # Pull
         origin.pull(current_branch)
         
-        # Requirements güncelle
         if os.path.exists("requirements.txt"):
             subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
         
@@ -480,56 +323,7 @@ async def hard_update(e):
     except Exception as e:
         await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull
-
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
-async def pinstall(e):
-    reply = await e.get_reply_message()
-    if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
-        if not os.path.exists("modules"):
-            os.makedirs("modules")
-        
-        path = await reply.download_media(file="modules/")
-        name = os.path.basename(path).replace('.py', '')
-        
-        await e.edit(f"⏳ `{name}` yükleniyor...")
-        
-        if await load_plugins(name):
-            await e.edit(f"✅ `{name}` başarıyla yüklendi ve aktif!")
-        else:
-            await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
-    else:
-        await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
-
-async def main():
-    log("🔄 Userbot başlatılıyor...")
-    await client.start()
-    log("✅ Userbot bağlandı")
-    
-    log("🔄 Inline bot başlatılıyor...")
-    await bot.start(bot_token=BOT_TOKEN)
-    log("✅ Inline bot bağlandı")
-    
-    # Modüller klasörünü oluştur
-    if not os.path.exists("modules"):
-        os.makedirs("modules")
-        log("📁 modules/ klasörü oluşturuldu")
-    
-    # Mevcut modülleri yükle
-    log("🔄 Modüller yükleniyor...")
-    module_files = glob.glob("modules/*.py")
-    if module_files:
-        for f in module_files:
-            name = os.path.basename(f).replace('.py', '')
-            await load_plugins(name)
-    else:
-        log("⚠️ modules/ klasöründe modül bulunamadı")
-    
-    log("✅ Bot Hazır!")
-    await client.run_until_disconnected()
-
-if __name__ == '__main__':
-    asyncio.get_event_loop().run_until_complete(main())))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull$'))
 async def git_pull(e):
     """Manuel git pull (yeniden başlatma olmadan)"""
     msg = await e.edit("🔄 Git pull yapılıyor...")
@@ -543,7 +337,6 @@ async def git_pull(e):
         origin = repo.remotes.origin
         current_branch = repo.active_branch.name
         
-        # Fetch ve pull
         origin.fetch()
         result = origin.pull(current_branch)
         
@@ -556,81 +349,13 @@ async def git_pull(e):
     except Exception as e:
         await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart
-
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
-async def pinstall(e):
-    reply = await e.get_reply_message()
-    if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
-        if not os.path.exists("modules"):
-            os.makedirs("modules")
-        
-        path = await reply.download_media(file="modules/")
-        name = os.path.basename(path).replace('.py', '')
-        
-        await e.edit(f"⏳ `{name}` yükleniyor...")
-        
-        if await load_plugins(name):
-            await e.edit(f"✅ `{name}` başarıyla yüklendi ve aktif!")
-        else:
-            await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
-    else:
-        await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
-
-async def main():
-    log("🔄 Userbot başlatılıyor...")
-    await client.start()
-    log("✅ Userbot bağlandı")
-    
-    log("🔄 Inline bot başlatılıyor...")
-    await bot.start(bot_token=BOT_TOKEN)
-    log("✅ Inline bot bağlandı")
-    
-    # Modüller klasörünü oluştur
-    if not os.path.exists("modules"):
-        os.makedirs("modules")
-        log("📁 modules/ klasörü oluşturuldu")
-    
-    # Mevcut modülleri yükle
-    log("🔄 Modüller yükleniyor...")
-    module_files = glob.glob("modules/*.py")
-    if module_files:
-        for f in module_files:
-            name = os.path.basename(f).replace('.py', '')
-            await load_plugins(name)
-    else:
-        log("⚠️ modules/ klasöründe modül bulunamadı")
-    
-    log("✅ Bot Hazır!")
-    await client.run_until_disconnected()
-
-if __name__ == '__main__':
-    asyncio.get_event_loop().run_until_complete(main())))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
 async def restart_bot(e):
     """Botu yeniden başlat"""
     await e.edit("🔄 Bot yeniden başlatılıyor...")
     await asyncio.sleep(1)
     os.execv(sys.executable, [sys.executable] + sys.argv)
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
-async def pinstall(e):
-    reply = await e.get_reply_message()
-    if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
-        if not os.path.exists("modules"):
-            os.makedirs("modules")
-        
-        path = await reply.download_media(file="modules/")
-        name = os.path.basename(path).replace('.py', '')
-        
-        await e.edit(f"⏳ `{name}` yükleniyor...")
-        
-        if await load_plugins(name):
-            await e.edit(f"✅ `{name}` başarıyla yüklendi ve aktif!")
-        else:
-            await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
-    else:
-        await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
-
 async def main():
     log("🔄 Userbot başlatılıyor...")
     await client.start()
@@ -640,12 +365,10 @@ async def main():
     await bot.start(bot_token=BOT_TOKEN)
     log("✅ Inline bot bağlandı")
     
-    # Modüller klasörünü oluştur
     if not os.path.exists("modules"):
         os.makedirs("modules")
         log("📁 modules/ klasörü oluşturuldu")
     
-    # Mevcut modülleri yükle
     log("🔄 Modüller yükleniyor...")
     module_files = glob.glob("modules/*.py")
     if module_files:
