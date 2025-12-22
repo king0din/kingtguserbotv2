@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
@@ -29,6 +29,9 @@ bot = TelegramClient('bot_session', API_ID, API_HASH)
 
 loaded_modules = {}
 start_time = time.time()
+
+# Restart sonrası mesaj göndermek için
+RESTART_FILE = ".restart_info"
 
 def log(text):
     print(f"\033[94m[SİSTEM]\033[0m {text}")
@@ -153,10 +156,27 @@ async def load_plugins(plugin_name):
         traceback.print_exc()
         return False
 
+def save_restart_info(chat_id, message_id):
+    """Restart bilgisini kaydet"""
+    with open(RESTART_FILE, "w") as f:
+        f.write(f"{chat_id}|{message_id}")
+
+def get_restart_info():
+    """Restart bilgisini oku ve sil"""
+    if os.path.exists(RESTART_FILE):
+        with open(RESTART_FILE, "r") as f:
+            data = f.read().strip()
+        os.remove(RESTART_FILE)
+        if "|" in data:
+            chat_id, msg_id = data.split("|")
+            return int(chat_id), int(msg_id)
+    return None, None
+
 @bot.on(events.InlineQuery)
 async def inline_handler(event):
+    builder = event.builder
+    
     if event.text == "help_menu":
-        builder = event.builder
         await event.answer([builder.article(
             "Userbot Menü", 
             text=f"**🤖 Komut Paneli** `v{__version__}`",
@@ -166,11 +186,38 @@ async def inline_handler(event):
                 [Button.inline("❌ Kapat", "close")]
             ]
         )])
+    
+    elif event.text == "start_menu":
+        uptime = get_readable_time(time.time() - start_time)
+        me = await client.get_me()
+        
+        text = f"**🤖 KingTG UserBot**\n\n"
+        text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
+        text += f"**🆔 ID:** `{me.id}`\n"
+        text += f"**📍 Username:** @{me.username}\n\n"
+        text += f"**🔢 Sürüm:** `v{__version__}`\n"
+        text += f"**⏱️ Uptime:** `{uptime}`\n"
+        text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
+        text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
+        text += f"**💻 Repo:** `{__repo__}`\n"
+        text += f"**👨‍💻 Geliştirici:** `{__author__}`"
+        
+        await event.answer([builder.article(
+            "Userbot Start", 
+            text=text,
+            buttons=[
+                [Button.inline("📜 Yardım", "help"), Button.inline("🔄 Güncelle", "update")],
+                [Button.inline("⚠️ Hard Update", "hard_update")],
+                [Button.inline("🔌 Modüller", "mods"), Button.inline("🔃 Restart", "restart")],
+                [Button.inline("❌ Kapat", "close")]
+            ]
+        )])
 
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     data = event.data.decode()
-    if data == "cmds":
+    
+    if data == "cmds" or data == "help":
         cmd_text = f"**📜 Ana Komutlar** `v{__version__}`\n\n"
         cmd_text += "• `.start` - Bot bilgileri\n"
         cmd_text += "• `.ping` - Ping & Uptime\n"
@@ -183,7 +230,8 @@ async def callback_handler(event):
         cmd_text += "• `.hardupdate` - Zorla güncelle\n"
         cmd_text += "• `.gitpull` - Manuel pull\n"
         cmd_text += "• `.restart` - Yeniden başlat"
-        await event.edit(cmd_text, buttons=[[Button.inline("🔙 Geri", "back")]])
+        await event.edit(cmd_text, buttons=[[Button.inline("🔙 Geri", "back_start")]])
+    
     elif data == "mods":
         if loaded_modules:
             mod_text = "**🔌 Yüklü Modüller:**\n\n"
@@ -191,36 +239,183 @@ async def callback_handler(event):
             mod_text += f"\n\n**Toplam:** {len(loaded_modules)} modül"
         else:
             mod_text = "⚠️ Henüz modül yüklenmemiş"
-        await event.edit(mod_text, buttons=[[Button.inline("🔙 Geri", "back")]])
-    elif data == "back":
+        await event.edit(mod_text, buttons=[[Button.inline("🔙 Geri", "back_start")]])
+    
+    elif data == "back" or data == "back_start":
+        uptime = get_readable_time(time.time() - start_time)
+        me = await client.get_me()
+        
+        text = f"**🤖 KingTG UserBot**\n\n"
+        text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
+        text += f"**🆔 ID:** `{me.id}`\n"
+        text += f"**📍 Username:** @{me.username}\n\n"
+        text += f"**🔢 Sürüm:** `v{__version__}`\n"
+        text += f"**⏱️ Uptime:** `{uptime}`\n"
+        text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
+        text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
+        text += f"**💻 Repo:** `{__repo__}`\n"
+        text += f"**👨‍💻 Geliştirici:** `{__author__}`"
+        
         await event.edit(
-            f"**🤖 Komut Paneli** `v{__version__}`",
+            text,
             buttons=[
-                [Button.inline("📜 Komutlar", "cmds")],
-                [Button.inline("🔌 Modüller", "mods")],
+                [Button.inline("📜 Yardım", "help"), Button.inline("🔄 Güncelle", "update")],
+                [Button.inline("⚠️ Hard Update", "hard_update")],
+                [Button.inline("🔌 Modüller", "mods"), Button.inline("🔃 Restart", "restart")],
                 [Button.inline("❌ Kapat", "close")]
             ]
         )
+    
+    elif data == "update":
+        await event.edit("🔄 **Güncelleme kontrol ediliyor...**")
+        
+        try:
+            if not os.path.exists(".git"):
+                await event.edit("❌ Bu bir git repository değil!\n\n**Manuel Kurulum:**\n```bash\ngit clone https://github.com/USERNAME/REPO .\n```",
+                    buttons=[[Button.inline("🔙 Geri", "back_start")]])
+                return
+            
+            repo = git.Repo(".")
+            current_branch = repo.active_branch.name
+            origin = repo.remotes.origin
+            origin.fetch()
+            
+            commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
+            
+            if not commits_behind:
+                await event.edit(f"✅ **Bot zaten güncel!**\n\n📌 Branch: `{current_branch}`\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n🔢 Sürüm: `v{__version__}`",
+                    buttons=[[Button.inline("🔙 Geri", "back_start")]])
+                return
+            
+            update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n**Son Değişiklikler:**\n"
+            for i, commit in enumerate(commits_behind[:3], 1):
+                update_info += f"{i}. {commit.summary[:50]}\n"
+            if len(commits_behind) > 3:
+                update_info += f"   _{len(commits_behind) - 3} değişiklik daha..._\n"
+            
+            update_info += "\n⏳ Güncelleniyor..."
+            await event.edit(update_info)
+            
+            if repo.is_dirty():
+                repo.git.stash('save', 'Auto-stash before update')
+                stashed = True
+            else:
+                stashed = False
+            
+            origin.pull(current_branch)
+            
+            if stashed:
+                try:
+                    repo.git.stash('pop')
+                except:
+                    pass
+            
+            if os.path.exists("requirements.txt"):
+                await event.edit("📦 Bağımlılıklar güncelleniyor...")
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+            
+            try:
+                with open("main.py", "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("__version__"):
+                            new_version = line.split("=")[1].strip().strip('"').strip("'")
+                            break
+                    else:
+                        new_version = "bilinmiyor"
+            except:
+                new_version = "bilinmiyor"
+            
+            await event.edit(f"✅ **Güncelleme tamamlandı!**\n\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n🔢 Eski Sürüm: `v{__version__}`\n🆕 Yeni Sürüm: `v{new_version}`\n\n🔄 Bot yeniden başlatılıyor...")
+            
+            # Restart bilgisini kaydet
+            save_restart_info(event.chat_id, event.message_id)
+            
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+            
+        except git.exc.GitCommandError as e:
+            await event.edit(f"❌ **Git Hatası:**\n```\n{str(e)}\n```\n\n💡 Hard Update butonunu deneyin",
+                buttons=[[Button.inline("⚠️ Hard Update", "hard_update"), Button.inline("🔙 Geri", "back_start")]])
+        except Exception as e:
+            await event.edit(f"❌ **Hata:**\n```\n{str(e)}\n```",
+                buttons=[[Button.inline("🔙 Geri", "back_start")]])
+    
+    elif data == "hard_update":
+        await event.edit("⚠️ **HARD UPDATE**\n\nBu işlem tüm local değişiklikleri silecek!\n\nDevam etmek istiyor musunuz?",
+            buttons=[
+                [Button.inline("✅ Evet, Devam Et", "hard_update_confirm")],
+                [Button.inline("❌ İptal", "back_start")]
+            ])
+    
+    elif data == "hard_update_confirm":
+        try:
+            await event.edit("🔄 Hard update başlatılıyor...")
+            
+            if not os.path.exists(".git"):
+                await event.edit("❌ Bu bir git repository değil!",
+                    buttons=[[Button.inline("🔙 Geri", "back_start")]])
+                return
+            
+            repo = git.Repo(".")
+            origin = repo.remotes.origin
+            current_branch = repo.active_branch.name
+            
+            repo.git.reset('--hard', f'origin/{current_branch}')
+            repo.git.clean('-fd')
+            origin.pull(current_branch)
+            
+            if os.path.exists("requirements.txt"):
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+            
+            await event.edit("✅ **Hard update tamamlandı!**\n\n🔄 Bot yeniden başlatılıyor...")
+            
+            # Restart bilgisini kaydet
+            save_restart_info(event.chat_id, event.message_id)
+            
+            await asyncio.sleep(2)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+            
+        except Exception as e:
+            await event.edit(f"❌ **Hata:**\n```\n{str(e)}\n```",
+                buttons=[[Button.inline("🔙 Geri", "back_start")]])
+    
+    elif data == "restart":
+        await event.edit("🔄 Bot yeniden başlatılıyor...")
+        
+        # Restart bilgisini kaydet
+        save_restart_info(event.chat_id, event.message_id)
+        
+        await asyncio.sleep(1)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+    
     elif data == "close":
         await event.delete()
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.start$'))
 async def start(e):
-    uptime = get_readable_time(time.time() - start_time)
-    me = await client.get_me()
-    
-    text = f"**🤖 KingTG UserBot**\n\n"
-    text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
-    text += f"**🆔 ID:** `{me.id}`\n"
-    text += f"**📍 Username:** @{me.username}\n\n"
-    text += f"**🔢 Sürüm:** `v{__version__}`\n"
-    text += f"**⏱️ Uptime:** `{uptime}`\n"
-    text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
-    text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
-    text += f"**💻 Repo:** `{__repo__}`\n"
-    text += f"**👨‍💻 Geliştirici:** `{__author__}`"
-    
-    await e.edit(text)
+    try:
+        me_bot = await bot.get_me()
+        res = await client.inline_query(me_bot.username, "start_menu")
+        await res[0].click(e.chat_id)
+        await e.delete()
+    except Exception as err:
+        # Fallback: Inline bot çalışmazsa eski yöntem
+        uptime = get_readable_time(time.time() - start_time)
+        me = await client.get_me()
+        
+        text = f"**🤖 KingTG UserBot**\n\n"
+        text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
+        text += f"**🆔 ID:** `{me.id}`\n"
+        text += f"**📍 Username:** @{me.username}\n\n"
+        text += f"**🔢 Sürüm:** `v{__version__}`\n"
+        text += f"**⏱️ Uptime:** `{uptime}`\n"
+        text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
+        text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
+        text += f"**💻 Repo:** `{__repo__}`\n"
+        text += f"**👨‍💻 Geliştirici:** `{__author__}`\n\n"
+        text += f"⚠️ Inline bot hatası: {err}"
+        
+        await e.edit(text)
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.ping$'))
 async def ping_cmd(e):
@@ -386,6 +581,9 @@ async def update_bot(e):
         
         await msg.edit(f"✅ **Güncelleme tamamlandı!**\n\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n🔢 Eski Sürüm: `v{__version__}`\n🆕 Yeni Sürüm: `v{new_version}`\n\n🔄 Bot yeniden başlatılıyor...")
         
+        # Restart bilgisini kaydet
+        save_restart_info(e.chat_id, msg.id)
+        
         await asyncio.sleep(2)
         os.execv(sys.executable, [sys.executable] + sys.argv)
         
@@ -423,6 +621,9 @@ async def hard_update(e):
         
         await msg.edit("✅ **Hard update tamamlandı!**\n\n🔄 Bot yeniden başlatılıyor...")
         
+        # Restart bilgisini kaydet
+        save_restart_info(e.chat_id, msg.id)
+        
         await asyncio.sleep(2)
         os.execv(sys.executable, [sys.executable] + sys.argv)
         
@@ -454,9 +655,29 @@ async def git_pull(e):
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
 async def restart_bot(e):
-    await e.edit("🔄 Bot yeniden başlatılıyor...")
+    msg = await e.edit("🔄 Bot yeniden başlatılıyor...")
+    
+    # Restart bilgisini kaydet
+    save_restart_info(e.chat_id, msg.id)
+    
     await asyncio.sleep(1)
     os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def check_restart_message():
+    """Restart sonrası başarı mesajı gönder"""
+    chat_id, msg_id = get_restart_info()
+    if chat_id and msg_id:
+        try:
+            uptime = get_readable_time(time.time() - start_time)
+            text = f"✅ **Bot başarıyla yeniden başlatıldı!**\n\n"
+            text += f"**🔢 Sürüm:** `v{__version__}`\n"
+            text += f"**⏱️ Uptime:** `{uptime}`\n"
+            text += f"**🔌 Modüller:** `{len(loaded_modules)}`"
+            
+            await client.edit_message(chat_id, msg_id, text)
+            log("✅ Restart başarı mesajı gönderildi")
+        except Exception as e:
+            log(f"⚠️ Restart mesajı güncellenemedi: {e}")
 
 async def main():
     log("=" * 50)
@@ -487,6 +708,9 @@ async def main():
             await load_plugins(name)
     else:
         log("⚠️ modules/ klasöründe modül bulunamadı")
+    
+    # Restart sonrası mesaj kontrolü
+    await check_restart_message()
     
     log("=" * 50)
     log(f"✅ Bot Hazır! Sürüm: v{__version__}")
