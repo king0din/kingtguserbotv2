@@ -31,9 +31,28 @@ def setup_compatibility():
         os.makedirs("userbot")
         log("📁 userbot/ uyumluluk klasörü oluşturuldu")
     
-    # __init__.py
+    # __init__.py - Ana modül değişkenleri
     init_content = '''# KingTG UserBot - Uyumluluk Katmanı
 # SedUserBot, AsenaUserBot vb. pluginleri destekler
+
+# Eski pluginlerin kullandığı global değişkenler
+CMD_HELP = {}
+CMD_LIST = {}
+SUDO_LIST = []
+BLACKLIST = []
+LOGS = None
+COUNT_MSG = 0
+USERS = {}
+BRAIN_CHECKER = []
+ZALG_LIST = [
+    "̖", "̗", "̘", "̙", "̜", "̝", "̞", "̟", "̠", "̤", "̥", "̦", "̩", "̪", "̫", "̬", "̭", "̮", "̯", "̰", "̱", "̲", "̳", "̹", "̺", "̻", "̼", "ͅ", "͇", "͈", "͉", "͍", "͎", "͓", "͔", "͕", "͖", "͙", "͚", "̣",
+    "̕", "̛", "̀", "́", "͘", "̡", "̢", "̧", "̨", "̴", "̵", "̶", "͏", "͜", "͝", "͞", "͟", "͠", "͢", "̸", "̷", "͡", "҉",
+    "̍", "̎", "̄", "̅", "̿", "̑", "̆", "̐", "͒", "͗", "͑", "̇", "̈", "̊", "͂", "̓", "̈́", "͊", "͋", "͌", "̃", "̂", "̌", "͐", "̀", "́", "̋", "̏", "̽", "̉", "ͣ", "ͤ", "ͥ", "ͦ", "ͧ", "ͨ", "ͩ", "ͪ", "ͫ", "ͬ", "ͭ", "ͮ", "ͯ", "̾", "͛", "͆", "̚"
+]
+
+# Bot bilgileri
+bot = None
+tgbot = None
 '''
     with open("userbot/__init__.py", "w", encoding="utf-8") as f:
         f.write(init_content)
@@ -187,7 +206,7 @@ BLACKLIST = []
     with open("userbot/utils.py", "w", encoding="utf-8") as f:
         f.write(utils_content)
     
-    log("✅ Uyumluluk katmanı hazır (userbot.events, userbot.cmdhelp, userbot.utils)")
+    log("✅ Uyumluluk katmanı hazır (CMD_HELP, ZALG_LIST, events, cmdhelp, utils)")
 
 # ============================================
 API_ID = int(os.getenv("API_ID"))
@@ -265,6 +284,13 @@ async def load_plugins(plugin_name):
                         log(f"❌ {plugin_name} yüklenemedi: {pkg} kurulamadı")
                         return False
         
+        # Uyumluluk katmanının yüklendiğinden emin ol
+        try:
+            import userbot
+        except ImportError:
+            setup_compatibility()
+            import userbot
+        
         spec = importlib.util.spec_from_file_location(plugin_name, path)
         if spec is None or spec.loader is None:
             log(f"❌ {plugin_name} spec oluşturulamadı")
@@ -276,10 +302,26 @@ async def load_plugins(plugin_name):
         try:
             spec.loader.exec_module(mod)
         except ImportError as e:
-            missing = str(e).split("'")[1] if "'" in str(e) else str(e)
+            error_msg = str(e)
+            # userbot modülünden import hatası
+            if "userbot" in error_msg:
+                log(f"⚠️ {plugin_name} userbot uyumluluk hatası: {error_msg}")
+                log(f"   💡 Bu plugin tam uyumlu olmayabilir")
+                return False
+            
+            # Diğer eksik paketler
+            missing = error_msg.split("'")[1] if "'" in error_msg else error_msg
             log(f"⚠️ {plugin_name} için {missing} gerekli, kuruluyor...")
             if install_package(missing):
-                importlib.reload(mod)
+                # Modülü tekrar yükle
+                try:
+                    spec = importlib.util.spec_from_file_location(plugin_name, path)
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[plugin_name] = mod
+                    spec.loader.exec_module(mod)
+                except Exception as retry_err:
+                    log(f"❌ {plugin_name} yeniden yüklenemedi: {retry_err}")
+                    return False
             else:
                 log(f"❌ {plugin_name} yüklenemedi: {missing} kurulamadı")
                 return False
@@ -313,6 +355,22 @@ async def load_plugins(plugin_name):
                 loaded_modules[plugin_name] = mod
                 log(f"✅ {plugin_name} yüklendi ({count} handler)")
                 return True
+        
+        # Eski userbot pluginleri için: @register ile kaydedilenler
+        # pending_handlers'a eklenmişlerdir, onları kontrol et
+        try:
+            from userbot.events import _pending_handlers
+            if _pending_handlers:
+                for handler, event in _pending_handlers:
+                    client.add_event_handler(handler, event)
+                    count += 1
+                _pending_handlers.clear()
+                if count > 0:
+                    loaded_modules[plugin_name] = mod
+                    log(f"✅ {plugin_name} yüklendi ({count} eski format handler)")
+                    return True
+        except:
+            pass
         
         funcs = [n for n, o in inspect.getmembers(mod) if inspect.iscoroutinefunction(o)]
         log(f"⚠️ {plugin_name} yüklendi ama event handler bulunamadı")
