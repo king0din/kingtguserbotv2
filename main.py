@@ -149,7 +149,9 @@ async def callback_handler(event):
         cmd_text += "• `.start` - Bot durumunu kontrol et\n"
         cmd_text += "• `.help` - Bu menüyü göster\n"
         cmd_text += "• `.pinstall` - Modül yükle\n"
+        cmd_text += "• `.delpin <isim>` - Modül sil\n"
         cmd_text += "• `.modules` - Yüklü modülleri listele\n"
+        cmd_text += "• `.listpins` - Tüm pluginleri listele\n"
         cmd_text += "• `.update` - GitHub'dan güncelle\n"
         cmd_text += "• `.hardupdate` - Zorla güncelle\n"
         cmd_text += "• `.gitpull` - Manuel pull\n"
@@ -197,7 +199,175 @@ async def list_modules(e):
         text = "⚠️ Henüz modül yüklenmemiş"
     await e.edit(text)
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall$'))
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.pinstall
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
+async def update_bot(e):
+    """GitHub'dan bot güncellemesi"""
+    msg = await e.edit("🔄 **Güncelleme kontrol ediliyor...**")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!\n\n"
+                          "**Manuel Kurulum:**\n"
+                          "```bash\n"
+                          "git clone https://github.com/USERNAME/REPO .\n"
+                          "```")
+            return
+        
+        repo = git.Repo(".")
+        current_branch = repo.active_branch.name
+        origin = repo.remotes.origin
+        origin.fetch()
+        
+        commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
+        
+        if not commits_behind:
+            await msg.edit("✅ **Bot zaten güncel!**\n\n"
+                          f"📌 Branch: `{current_branch}`\n"
+                          f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`")
+            return
+        
+        update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n"
+        update_info += "**Son Değişiklikler:**\n"
+        for i, commit in enumerate(commits_behind[:3], 1):
+            update_info += f"{i}. {commit.summary[:50]}\n"
+        if len(commits_behind) > 3:
+            update_info += f"   _{len(commits_behind) - 3} değişiklik daha..._\n"
+        
+        update_info += "\n⏳ Güncelleniyor..."
+        await msg.edit(update_info)
+        
+        if repo.is_dirty():
+            repo.git.stash('save', 'Auto-stash before update')
+            stashed = True
+        else:
+            stashed = False
+        
+        origin.pull(current_branch)
+        
+        if stashed:
+            try:
+                repo.git.stash('pop')
+            except:
+                pass
+        
+        if os.path.exists("requirements.txt"):
+            await msg.edit("📦 Bağımlılıklar güncelleniyor...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Güncelleme tamamlandı!**\n\n"
+                      f"🔖 Yeni Commit: `{repo.head.commit.hexsha[:7]}`\n\n"
+                      "🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except git.exc.GitCommandError as e:
+        await msg.edit(f"❌ **Git Hatası:**\n```\n{str(e)}\n```\n\n"
+                      "💡 `.hardupdate` komutunu deneyin (tüm değişiklikleri siler)")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.hardupdate$'))
+async def hard_update(e):
+    """Zorla güncelleme (tüm local değişiklikleri siler)"""
+    msg = await e.edit("⚠️ **HARD UPDATE**\n\n"
+                      "Bu işlem tüm local değişiklikleri silecek!\n"
+                      "⏳ 5 saniye içinde iptal için mesajı silin...")
+    
+    await asyncio.sleep(5)
+    
+    try:
+        try:
+            await msg.edit("🔄 Hard update başlatılıyor...")
+        except:
+            return
+        
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        repo.git.reset('--hard', f'origin/{current_branch}')
+        repo.git.clean('-fd')
+        origin.pull(current_branch)
+        
+        if os.path.exists("requirements.txt"):
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Hard update tamamlandı!**\n\n"
+                      "🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull$'))
+async def git_pull(e):
+    """Manuel git pull (yeniden başlatma olmadan)"""
+    msg = await e.edit("🔄 Git pull yapılıyor...")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        origin.fetch()
+        result = origin.pull(current_branch)
+        
+        if result[0].flags & result[0].HEAD_UPTODATE:
+            await msg.edit("✅ Zaten güncel!")
+        else:
+            await msg.edit(f"✅ Pull tamamlandı!\n\n"
+                          f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n\n"
+                          "⚠️ Değişikliklerin aktif olması için `.restart` kullanın")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
+async def restart_bot(e):
+    """Botu yeniden başlat"""
+    await e.edit("🔄 Bot yeniden başlatılıyor...")
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def main():
+    log("🔄 Userbot başlatılıyor...")
+    await client.start()
+    log("✅ Userbot bağlandı")
+    
+    log("🔄 Inline bot başlatılıyor...")
+    await bot.start(bot_token=BOT_TOKEN)
+    log("✅ Inline bot bağlandı")
+    
+    if not os.path.exists("modules"):
+        os.makedirs("modules")
+        log("📁 modules/ klasörü oluşturuldu")
+    
+    log("🔄 Modüller yükleniyor...")
+    module_files = glob.glob("modules/*.py")
+    if module_files:
+        for f in module_files:
+            name = os.path.basename(f).replace('.py', '')
+            await load_plugins(name)
+    else:
+        log("⚠️ modules/ klasöründe modül bulunamadı")
+    
+    log("✅ Bot Hazır!")
+    await client.run_until_disconnected()
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())))
 async def pinstall(e):
     reply = await e.get_reply_message()
     if reply and reply.file and reply.file.name and reply.file.name.endswith('.py'):
@@ -215,6 +385,404 @@ async def pinstall(e):
             await e.edit(f"⚠️ `{name}` yüklendi ama event handler bulunamadı.")
     else:
         await e.edit("⚠️ Bir `.py` dosyasına yanıt verin.")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.delpin (\S+)
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
+async def update_bot(e):
+    """GitHub'dan bot güncellemesi"""
+    msg = await e.edit("🔄 **Güncelleme kontrol ediliyor...**")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!\n\n"
+                          "**Manuel Kurulum:**\n"
+                          "```bash\n"
+                          "git clone https://github.com/USERNAME/REPO .\n"
+                          "```")
+            return
+        
+        repo = git.Repo(".")
+        current_branch = repo.active_branch.name
+        origin = repo.remotes.origin
+        origin.fetch()
+        
+        commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
+        
+        if not commits_behind:
+            await msg.edit("✅ **Bot zaten güncel!**\n\n"
+                          f"📌 Branch: `{current_branch}`\n"
+                          f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`")
+            return
+        
+        update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n"
+        update_info += "**Son Değişiklikler:**\n"
+        for i, commit in enumerate(commits_behind[:3], 1):
+            update_info += f"{i}. {commit.summary[:50]}\n"
+        if len(commits_behind) > 3:
+            update_info += f"   _{len(commits_behind) - 3} değişiklik daha..._\n"
+        
+        update_info += "\n⏳ Güncelleniyor..."
+        await msg.edit(update_info)
+        
+        if repo.is_dirty():
+            repo.git.stash('save', 'Auto-stash before update')
+            stashed = True
+        else:
+            stashed = False
+        
+        origin.pull(current_branch)
+        
+        if stashed:
+            try:
+                repo.git.stash('pop')
+            except:
+                pass
+        
+        if os.path.exists("requirements.txt"):
+            await msg.edit("📦 Bağımlılıklar güncelleniyor...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Güncelleme tamamlandı!**\n\n"
+                      f"🔖 Yeni Commit: `{repo.head.commit.hexsha[:7]}`\n\n"
+                      "🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except git.exc.GitCommandError as e:
+        await msg.edit(f"❌ **Git Hatası:**\n```\n{str(e)}\n```\n\n"
+                      "💡 `.hardupdate` komutunu deneyin (tüm değişiklikleri siler)")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.hardupdate$'))
+async def hard_update(e):
+    """Zorla güncelleme (tüm local değişiklikleri siler)"""
+    msg = await e.edit("⚠️ **HARD UPDATE**\n\n"
+                      "Bu işlem tüm local değişiklikleri silecek!\n"
+                      "⏳ 5 saniye içinde iptal için mesajı silin...")
+    
+    await asyncio.sleep(5)
+    
+    try:
+        try:
+            await msg.edit("🔄 Hard update başlatılıyor...")
+        except:
+            return
+        
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        repo.git.reset('--hard', f'origin/{current_branch}')
+        repo.git.clean('-fd')
+        origin.pull(current_branch)
+        
+        if os.path.exists("requirements.txt"):
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Hard update tamamlandı!**\n\n"
+                      "🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull$'))
+async def git_pull(e):
+    """Manuel git pull (yeniden başlatma olmadan)"""
+    msg = await e.edit("🔄 Git pull yapılıyor...")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        origin.fetch()
+        result = origin.pull(current_branch)
+        
+        if result[0].flags & result[0].HEAD_UPTODATE:
+            await msg.edit("✅ Zaten güncel!")
+        else:
+            await msg.edit(f"✅ Pull tamamlandı!\n\n"
+                          f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n\n"
+                          "⚠️ Değişikliklerin aktif olması için `.restart` kullanın")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
+async def restart_bot(e):
+    """Botu yeniden başlat"""
+    await e.edit("🔄 Bot yeniden başlatılıyor...")
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def main():
+    log("🔄 Userbot başlatılıyor...")
+    await client.start()
+    log("✅ Userbot bağlandı")
+    
+    log("🔄 Inline bot başlatılıyor...")
+    await bot.start(bot_token=BOT_TOKEN)
+    log("✅ Inline bot bağlandı")
+    
+    if not os.path.exists("modules"):
+        os.makedirs("modules")
+        log("📁 modules/ klasörü oluşturuldu")
+    
+    log("🔄 Modüller yükleniyor...")
+    module_files = glob.glob("modules/*.py")
+    if module_files:
+        for f in module_files:
+            name = os.path.basename(f).replace('.py', '')
+            await load_plugins(name)
+    else:
+        log("⚠️ modules/ klasöründe modül bulunamadı")
+    
+    log("✅ Bot Hazır!")
+    await client.run_until_disconnected()
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())))
+async def delpin(e):
+    """Plugin sil"""
+    plugin_name = e.pattern_match.group(1)
+    
+    # .py uzantısını kaldır (varsa)
+    if plugin_name.endswith('.py'):
+        plugin_name = plugin_name[:-3]
+    
+    path = f"modules/{plugin_name}.py"
+    
+    # Dosya var mı kontrol et
+    if not os.path.exists(path):
+        await e.edit(f"❌ `{plugin_name}` bulunamadı!\n\n"
+                    f"💡 Yüklü modüller için `.modules` kullanın.")
+        return
+    
+    await e.edit(f"⏳ `{plugin_name}` siliniyor...")
+    
+    try:
+        # Dosyayı sil
+        os.remove(path)
+        
+        # Loaded modules'den kaldır
+        if plugin_name in loaded_modules:
+            del loaded_modules[plugin_name]
+        
+        # sys.modules'den kaldır
+        if plugin_name in sys.modules:
+            del sys.modules[plugin_name]
+        
+        await e.edit(f"✅ `{plugin_name}` başarıyla silindi!\n\n"
+                    f"🔄 Event handler'lar yeniden başlatma sonrası temizlenecek.")
+        
+    except Exception as err:
+        await e.edit(f"❌ `{plugin_name}` silinirken hata:\n```\n{str(err)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.listpins
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
+async def update_bot(e):
+    """GitHub'dan bot güncellemesi"""
+    msg = await e.edit("🔄 **Güncelleme kontrol ediliyor...**")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!\n\n"
+                          "**Manuel Kurulum:**\n"
+                          "```bash\n"
+                          "git clone https://github.com/USERNAME/REPO .\n"
+                          "```")
+            return
+        
+        repo = git.Repo(".")
+        current_branch = repo.active_branch.name
+        origin = repo.remotes.origin
+        origin.fetch()
+        
+        commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
+        
+        if not commits_behind:
+            await msg.edit("✅ **Bot zaten güncel!**\n\n"
+                          f"📌 Branch: `{current_branch}`\n"
+                          f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`")
+            return
+        
+        update_info = f"🆕 **{len(commits_behind)} yeni commit bulundu!**\n\n"
+        update_info += "**Son Değişiklikler:**\n"
+        for i, commit in enumerate(commits_behind[:3], 1):
+            update_info += f"{i}. {commit.summary[:50]}\n"
+        if len(commits_behind) > 3:
+            update_info += f"   _{len(commits_behind) - 3} değişiklik daha..._\n"
+        
+        update_info += "\n⏳ Güncelleniyor..."
+        await msg.edit(update_info)
+        
+        if repo.is_dirty():
+            repo.git.stash('save', 'Auto-stash before update')
+            stashed = True
+        else:
+            stashed = False
+        
+        origin.pull(current_branch)
+        
+        if stashed:
+            try:
+                repo.git.stash('pop')
+            except:
+                pass
+        
+        if os.path.exists("requirements.txt"):
+            await msg.edit("📦 Bağımlılıklar güncelleniyor...")
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Güncelleme tamamlandı!**\n\n"
+                      f"🔖 Yeni Commit: `{repo.head.commit.hexsha[:7]}`\n\n"
+                      "🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except git.exc.GitCommandError as e:
+        await msg.edit(f"❌ **Git Hatası:**\n```\n{str(e)}\n```\n\n"
+                      "💡 `.hardupdate` komutunu deneyin (tüm değişiklikleri siler)")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.hardupdate$'))
+async def hard_update(e):
+    """Zorla güncelleme (tüm local değişiklikleri siler)"""
+    msg = await e.edit("⚠️ **HARD UPDATE**\n\n"
+                      "Bu işlem tüm local değişiklikleri silecek!\n"
+                      "⏳ 5 saniye içinde iptal için mesajı silin...")
+    
+    await asyncio.sleep(5)
+    
+    try:
+        try:
+            await msg.edit("🔄 Hard update başlatılıyor...")
+        except:
+            return
+        
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        repo.git.reset('--hard', f'origin/{current_branch}')
+        repo.git.clean('-fd')
+        origin.pull(current_branch)
+        
+        if os.path.exists("requirements.txt"):
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "-q", "--upgrade"])
+        
+        await msg.edit("✅ **Hard update tamamlandı!**\n\n"
+                      "🔄 Bot yeniden başlatılıyor...")
+        
+        await asyncio.sleep(2)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+        
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.gitpull$'))
+async def git_pull(e):
+    """Manuel git pull (yeniden başlatma olmadan)"""
+    msg = await e.edit("🔄 Git pull yapılıyor...")
+    
+    try:
+        if not os.path.exists(".git"):
+            await msg.edit("❌ Bu bir git repository değil!")
+            return
+        
+        repo = git.Repo(".")
+        origin = repo.remotes.origin
+        current_branch = repo.active_branch.name
+        
+        origin.fetch()
+        result = origin.pull(current_branch)
+        
+        if result[0].flags & result[0].HEAD_UPTODATE:
+            await msg.edit("✅ Zaten güncel!")
+        else:
+            await msg.edit(f"✅ Pull tamamlandı!\n\n"
+                          f"🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n\n"
+                          "⚠️ Değişikliklerin aktif olması için `.restart` kullanın")
+    except Exception as e:
+        await msg.edit(f"❌ **Hata:**\n```\n{str(e)}\n```")
+
+@client.on(events.NewMessage(outgoing=True, pattern=r'^\.restart$'))
+async def restart_bot(e):
+    """Botu yeniden başlat"""
+    await e.edit("🔄 Bot yeniden başlatılıyor...")
+    await asyncio.sleep(1)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+async def main():
+    log("🔄 Userbot başlatılıyor...")
+    await client.start()
+    log("✅ Userbot bağlandı")
+    
+    log("🔄 Inline bot başlatılıyor...")
+    await bot.start(bot_token=BOT_TOKEN)
+    log("✅ Inline bot bağlandı")
+    
+    if not os.path.exists("modules"):
+        os.makedirs("modules")
+        log("📁 modules/ klasörü oluşturuldu")
+    
+    log("🔄 Modüller yükleniyor...")
+    module_files = glob.glob("modules/*.py")
+    if module_files:
+        for f in module_files:
+            name = os.path.basename(f).replace('.py', '')
+            await load_plugins(name)
+    else:
+        log("⚠️ modules/ klasöründe modül bulunamadı")
+    
+    log("✅ Bot Hazır!")
+    await client.run_until_disconnected()
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())))
+async def listpins(e):
+    """Dosya sistemindeki tüm pluginleri listele"""
+    module_files = glob.glob("modules/*.py")
+    
+    if not module_files:
+        await e.edit("⚠️ `modules/` klasöründe plugin bulunamadı.")
+        return
+    
+    text = "**📦 Dosya Sistemindeki Pluginler:**\n\n"
+    
+    for f in sorted(module_files):
+        name = os.path.basename(f).replace('.py', '')
+        size = os.path.getsize(f) / 1024  # KB cinsinden
+        
+        # Yüklü mü kontrol et
+        status = "✅" if name in loaded_modules else "❌"
+        
+        text += f"{status} `{name}` ({size:.1f} KB)\n"
+    
+    text += f"\n**Toplam:** {len(module_files)} plugin"
+    text += f"\n**Yüklü:** {len(loaded_modules)} plugin"
+    
+    await e.edit(text)
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^\.update$'))
 async def update_bot(e):
