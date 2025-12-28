@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.8"
+__version__ = "1.0.9"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
@@ -481,6 +481,12 @@ async def inline_handler(event):
 
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
+    # Sadece bot sahibi butonları kullanabilir
+    me = await client.get_me()
+    if event.sender_id != me.id:
+        await event.answer("🚫 Bu butonları sadece bot sahibi kullanabilir!", alert=True)
+        return
+    
     data = event.data.decode()
     
     if data == "cmds" or data == "help":
