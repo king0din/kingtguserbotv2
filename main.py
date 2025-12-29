@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
@@ -482,6 +482,14 @@ async def inline_handler(event):
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     data = event.data.decode()
+    
+    # Müzik plugin callback'leri - bunları müzik pluginine bırak
+    if data.startswith(('mps_', 'mrs_', 'msk_', 'mst_', 'mrf_', 'mplay_')):
+        return
+    
+    # Whisper plugin callback'leri
+    if data.startswith(('show_', 'read_')):
+        return
     
     # Sadece .start menüsü butonları için sahip kontrolü
     menu_buttons = ["cmds", "help", "mods", "back", "back_start", "stats"]
