@@ -13,7 +13,7 @@ import git
 # ============================================
 # BOT SÜRÜM BİLGİSİ
 # ============================================
-__version__ = "1.0.9"
+__version__ = "1.1.0"
 __author__ = "@KingOdi"
 __repo__ = "şuanlık özeldir"
 # ============================================
@@ -54,6 +54,515 @@ ZALG_LIST = [
 bot = None
 tgbot = None
 '''
+    with open("userbot/__init__.py", "w", encoding="utf-8") as f:
+        f.write(init_content)
+    
+    # events.py - @register decorator
+    events_content = '''# KingTG UserBot - Events Uyumluluk Modülü
+from telethon import events
+import functools
+
+_client = None
+_pending_handlers = []
+
+# NewMessage'ın desteklediği parametreler
+VALID_PARAMS = {
+    'incoming', 'outgoing', 'from_users', 'forwards', 'pattern',
+    'chats', 'blacklist_chats', 'func'
+}
+
+def set_client(client):
+    global _client
+    _client = client
+    for handler, event in _pending_handlers:
+        _client.add_event_handler(handler, event)
+    _pending_handlers.clear()
+
+def register(outgoing=True, incoming=False, pattern=None, **kwargs):
+    # Bilinmeyen parametreleri filtrele (disable_errors, allow_sudo vb.)
+    filtered_kwargs = {k: v for k, v in kwargs.items() if k in VALID_PARAMS}
+    
+    def decorator(func):
+        event = events.NewMessage(
+            outgoing=outgoing,
+            incoming=incoming,
+            pattern=pattern,
+            **filtered_kwargs
+        )
+        
+        @functools.wraps(func)
+        async def wrapper(event):
+            try:
+                return await func(event)
+            except Exception as e:
+                # disable_errors=True olan pluginler için hataları yut
+                print(f"[PLUGIN HATA] {func.__name__}: {e}")
+                return None
+        
+        if _client is not None:
+            _client.add_event_handler(wrapper, event)
+        else:
+            _pending_handlers.append((wrapper, event))
+        
+        return wrapper
+    return decorator
+
+def on(event):
+    def decorator(func):
+        if _client is not None:
+            _client.add_event_handler(func, event)
+        else:
+            _pending_handlers.append((func, event))
+        return func
+    return decorator
+'''
+    with open("userbot/events.py", "w", encoding="utf-8") as f:
+        f.write(events_content)
+    
+    # cmdhelp.py - CmdHelp sınıfı
+    cmdhelp_content = '''# KingTG UserBot - CmdHelp Uyumluluk Modülü
+_help_dict = {}
+
+class CmdHelp:
+    def __init__(self, module_name):
+        self.module_name = module_name
+        self.commands = []
+        self.info = None
+    
+    def add_command(self, command, params=None, description=None, example=None):
+        self.commands.append({
+            'command': command,
+            'params': params,
+            'description': description,
+            'example': example
+        })
+        return self
+    
+    def add_info(self, info):
+        self.info = info
+        return self
+    
+    def add(self):
+        _help_dict[self.module_name] = {
+            'commands': self.commands,
+            'info': self.info
+        }
+        return self
+
+def get_all_help():
+    return _help_dict
+
+def get_help(module_name):
+    return _help_dict.get(module_name)
+
+def format_help(module_name):
+    help_data = get_help(module_name)
+    if not help_data:
+        return None
+    
+    text = f"**📖 {module_name} Yardım**\\n\\n"
+    
+    for cmd in help_data['commands']:
+        text += f"• `.{cmd['command']}`"
+        if cmd['params']:
+            text += f" `{cmd['params']}`"
+        text += "\\n"
+        if cmd['description']:
+            text += f"  ➥ {cmd['description']}\\n"
+        if cmd['example']:
+            text += f"  📝 Örnek: `{cmd['example']}`\\n"
+        text += "\\n"
+    
+    if help_data['info']:
+        text += f"ℹ️ {help_data['info']}"
+    
+    return text
+'''
+    with open("userbot/cmdhelp.py", "w", encoding="utf-8") as f:
+        f.write(cmdhelp_content)
+    
+    # utils.py - Yardımcı fonksiyonlar
+    utils_content = '''# KingTG UserBot - Utils Uyumluluk Modülü
+import asyncio
+import subprocess
+
+async def edit_or_reply(event, text, **kwargs):
+    try:
+        return await event.edit(text, **kwargs)
+    except:
+        return await event.reply(text, **kwargs)
+
+async def edit_delete(event, text, time=5):
+    msg = await event.edit(text)
+    await asyncio.sleep(time)
+    await msg.delete()
+
+def run_command(cmd):
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.stdout or result.stderr
+    except Exception as e:
+        return str(e)
+
+async def run_command_async(cmd):
+    proc = await asyncio.create_subprocess_shell(
+        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    return stdout.decode() or stderr.decode()
+
+TEMP_DIR = "/tmp"
+CMD_HELP = {}
+CMD_LIST = {}
+SUDO_LIST = []
+BLACKLIST = []
+'''
+    with open("userbot/utils.py", "w", encoding="utf-8") as f:
+        f.write(utils_content)
+    
+    log("✅ Uyumluluk katmanı hazır (CMD_HELP, ZALG_LIST, events, cmdhelp, utils)")
+
+# ============================================
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")
+
+client = TelegramClient('userbot_session', API_ID, API_HASH)
+bot = TelegramClient('bot_session', API_ID, API_HASH)
+
+loaded_modules = {}
+start_time = time.time()
+
+# Restart sonrası mesaj göndermek için
+RESTART_FILE = ".restart_info"
+
+def log(text):
+    print(f"\033[94m[SİSTEM]\033[0m {text}")
+
+def get_readable_time(seconds):
+    """Saniyeyi okunabilir formata çevir"""
+    intervals = (
+        ('gün', 86400),
+        ('saat', 3600),
+        ('dakika', 60),
+        ('saniye', 1),
+    )
+    result = []
+    for name, count in intervals:
+        value = seconds // count
+        if value:
+            seconds -= value * count
+            result.append(f"{int(value)} {name}")
+    return ', '.join(result[:2]) if result else '0 saniye'
+
+def install_package(package_name):
+    """Pip ile paket kur"""
+    try:
+        log(f"📦 {package_name} kuruluyor...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name, "-q"])
+        log(f"✅ {package_name} kuruldu")
+        return True
+    except Exception as e:
+        log(f"❌ {package_name} kurulamadı: {e}")
+        return False
+
+def check_requirements(path):
+    """Modül dosyasındaki requirements yorumunu kontrol et"""
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip().startswith('# requires:') or line.strip().startswith('# requirements:'):
+                    packages = line.split(':', 1)[1].strip().split(',')
+                    return [pkg.strip() for pkg in packages if pkg.strip()]
+    except:
+        pass
+    return []
+
+async def load_plugins(plugin_name):
+    try:
+        path = f"modules/{plugin_name}.py"
+        if not os.path.exists(path):
+            log(f"❌ {path} bulunamadı")
+            return False
+        
+        required_packages = check_requirements(path)
+        if required_packages:
+            log(f"🔍 {plugin_name} için gereksinimler: {', '.join(required_packages)}")
+            for pkg in required_packages:
+                try:
+                    __import__(pkg)
+                except ImportError:
+                    log(f"⚠️ {pkg} bulunamadı, kuruluyor...")
+                    if not install_package(pkg):
+                        log(f"❌ {plugin_name} yüklenemedi: {pkg} kurulamadı")
+                        return False
+        
+        # Uyumluluk katmanının yüklendiğinden emin ol
+        try:
+            import userbot
+        except ImportError:
+            setup_compatibility()
+            import userbot
+        
+        spec = importlib.util.spec_from_file_location(plugin_name, path)
+        if spec is None or spec.loader is None:
+            log(f"❌ {plugin_name} spec oluşturulamadı")
+            return False
+            
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[plugin_name] = mod
+        
+        try:
+            spec.loader.exec_module(mod)
+        except ImportError as e:
+            error_msg = str(e)
+            # userbot modülünden import hatası
+            if "userbot" in error_msg:
+                log(f"⚠️ {plugin_name} userbot uyumluluk hatası: {error_msg}")
+                log(f"   💡 Bu plugin tam uyumlu olmayabilir")
+                return False
+            
+            # Diğer eksik paketler
+            missing = error_msg.split("'")[1] if "'" in error_msg else error_msg
+            log(f"⚠️ {plugin_name} için {missing} gerekli, kuruluyor...")
+            if install_package(missing):
+                # Modülü tekrar yükle
+                try:
+                    spec = importlib.util.spec_from_file_location(plugin_name, path)
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[plugin_name] = mod
+                    spec.loader.exec_module(mod)
+                except Exception as retry_err:
+                    log(f"❌ {plugin_name} yeniden yüklenemedi: {retry_err}")
+                    return False
+            else:
+                log(f"❌ {plugin_name} yüklenemedi: {missing} kurulamadı")
+                return False
+        
+        if hasattr(mod, 'register') and callable(mod.register):
+            mod.register(client)
+            loaded_modules[plugin_name] = mod
+            log(f"✅ {plugin_name} yüklendi (register fonksiyonu)")
+            
+            # Bot handler'ları da kaydet
+            if hasattr(mod, 'register_bot') and callable(mod.register_bot):
+                try:
+                    mod.register_bot(bot, client)
+                    log(f"  ✓ {plugin_name} bot handler'ları yüklendi")
+                except Exception as bot_err:
+                    log(f"  ⚠️ {plugin_name} bot handler hatası: {bot_err}")
+            
+            return True
+        
+        count = 0
+        for name, obj in inspect.getmembers(mod):
+            if not callable(obj) or name.startswith('_'):
+                continue
+            
+            if isinstance(obj, events.common.EventBuilder):
+                client.add_event_handler(obj)
+                count += 1
+                log(f"  ✓ {name} eklendi (EventBuilder)")
+        
+        if count > 0:
+            loaded_modules[plugin_name] = mod
+            log(f"✅ {plugin_name} yüklendi ({count} handler)")
+            return True
+        
+        if hasattr(mod, '__plugin_handlers__'):
+            for handler in mod.__plugin_handlers__:
+                client.add_event_handler(handler)
+                count += 1
+            if count > 0:
+                loaded_modules[plugin_name] = mod
+                log(f"✅ {plugin_name} yüklendi ({count} handler)")
+                return True
+        
+        # Eski userbot pluginleri için: @register ile kaydedilenler
+        # pending_handlers'a eklenmişlerdir, onları kontrol et
+        try:
+            from userbot.events import _pending_handlers
+            if _pending_handlers:
+                for handler, event in _pending_handlers:
+                    client.add_event_handler(handler, event)
+                    count += 1
+                _pending_handlers.clear()
+                if count > 0:
+                    loaded_modules[plugin_name] = mod
+                    log(f"✅ {plugin_name} yüklendi ({count} eski format handler)")
+                    return True
+        except:
+            pass
+        
+        # Bot handler'ları için register_bot fonksiyonu kontrol et
+        if hasattr(mod, 'register_bot') and callable(mod.register_bot):
+            try:
+                mod.register_bot(bot, client)
+                log(f"  ✓ {plugin_name} bot handler'ları yüklendi")
+                if plugin_name not in loaded_modules:
+                    loaded_modules[plugin_name] = mod
+                    count += 1
+            except Exception as bot_err:
+                log(f"  ⚠️ {plugin_name} bot handler hatası: {bot_err}")
+        
+        if count > 0:
+            return True
+        
+        funcs = [n for n, o in inspect.getmembers(mod) if inspect.iscoroutinefunction(o)]
+        log(f"⚠️ {plugin_name} yüklendi ama event handler bulunamadı")
+        if funcs:
+            log(f"   Bulunan async fonksiyonlar: {', '.join(funcs)}")
+            log(f"   💡 İpucu: Modülde register(client) fonksiyonu ekleyin")
+        return False
+            
+    except Exception as e:
+        log(f"❌ {plugin_name} yüklenemedi: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def save_restart_info(chat_id, message_id):
+    """Restart bilgisini kaydet"""
+    with open(RESTART_FILE, "w") as f:
+        f.write(f"{chat_id}|{message_id}")
+
+def get_restart_info():
+    """Restart bilgisini oku ve sil"""
+    if os.path.exists(RESTART_FILE):
+        with open(RESTART_FILE, "r") as f:
+            data = f.read().strip()
+        os.remove(RESTART_FILE)
+        if "|" in data:
+            chat_id, msg_id = data.split("|")
+            return int(chat_id), int(msg_id)
+    return None, None
+
+@bot.on(events.InlineQuery)
+async def inline_handler(event):
+    builder = event.builder
+    
+    if event.text == "help_menu":
+        await event.answer([builder.article(
+            "Userbot Menü", 
+            text=f"**🤖 Komut Paneli** `v{__version__}`",
+            buttons=[
+                [Button.inline("📜 Komutlar", "cmds")],
+                [Button.inline("🔌 Modüller", "mods")],
+                [Button.inline("❌ Kapat", "close")]
+            ]
+        )])
+    
+    elif event.text == "start_menu":
+        uptime = get_readable_time(time.time() - start_time)
+        me = await client.get_me()
+        
+        text = f"**🤖 KingTG UserBot**\n\n"
+        text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
+        text += f"**🆔 ID:** `{me.id}`\n"
+        text += f"**📍 Username:** @{me.username}\n\n"
+        text += f"**🔢 Sürüm:** `v{__version__}`\n"
+        text += f"**⏱️ Uptime:** `{uptime}`\n"
+        text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
+        text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
+        text += f"**💻 Repo:** `{__repo__}`\n"
+        text += f"**👨‍💻 Geliştirici:** `{__author__}`"
+        
+        await event.answer([builder.article(
+            "Userbot Start", 
+            text=text,
+            buttons=[
+                [Button.inline("📜 Yardım", "help"), Button.inline("🔄 Güncelle", "update")],
+                [Button.inline("⚠️ Hard Update", "hard_update")],
+                [Button.inline("🔌 Modüller", "mods"), Button.inline("🔃 Restart", "restart")],
+                [Button.inline("❌ Kapat", "close")]
+            ]
+        )])
+
+@bot.on(events.CallbackQuery)
+async def callback_handler(event):
+    data = event.data.decode()
+    
+    # Sadece .start menüsü butonları için sahip kontrolü
+    menu_buttons = ["cmds", "help", "mods", "back", "back_start", "stats"]
+    
+    if data in menu_buttons:
+        me = await client.get_me()
+        if event.sender_id != me.id:
+            await event.answer("🚫 Bu butonları sadece bot sahibi kullanabilir!", alert=True)
+            return
+    
+    if data == "cmds" or data == "help":
+        cmd_text = f"**📜 Ana Komutlar** `v{__version__}`\n\n"
+        cmd_text += "• `.start` - Bot bilgileri\n"
+        cmd_text += "• `.ping` - Ping & Uptime\n"
+        cmd_text += "• `.help` - Bu menüyü göster\n"
+        cmd_text += "• `.pinstall` - Modül yükle\n"
+        cmd_text += "• `.delpin <isim>` - Modül sil\n"
+        cmd_text += "• `.modules` - Yüklü modüller\n"
+        cmd_text += "• `.listpins` - Tüm pluginler\n"
+        cmd_text += "• `.pluginhelp` - Plugin yardımları\n"
+        cmd_text += "• `.update` - GitHub'dan güncelle\n"
+        cmd_text += "• `.hardupdate` - Zorla güncelle\n"
+        cmd_text += "• `.gitpull` - Manuel pull\n"
+        cmd_text += "• `.restart` - Yeniden başlat"
+        await event.edit(cmd_text, buttons=[[Button.inline("🔙 Geri", "back_start")]])
+    
+    elif data == "mods":
+        if loaded_modules:
+            mod_text = "**🔌 Yüklü Modüller:**\n\n"
+            mod_text += "\n".join([f"• `{name}`" for name in loaded_modules.keys()])
+            mod_text += f"\n\n**Toplam:** {len(loaded_modules)} modül"
+        else:
+            mod_text = "⚠️ Henüz modül yüklenmemiş"
+        await event.edit(mod_text, buttons=[[Button.inline("🔙 Geri", "back_start")]])
+    
+    elif data == "back" or data == "back_start":
+        uptime = get_readable_time(time.time() - start_time)
+        me = await client.get_me()
+        
+        text = f"**🤖 KingTG UserBot**\n\n"
+        text += f"**👤 Kullanıcı:** `{me.first_name}`\n"
+        text += f"**🆔 ID:** `{me.id}`\n"
+        text += f"**📍 Username:** @{me.username}\n\n"
+        text += f"**🔢 Sürüm:** `v{__version__}`\n"
+        text += f"**⏱️ Uptime:** `{uptime}`\n"
+        text += f"**🔌 Modüller:** `{len(loaded_modules)}`\n"
+        text += f"**🐍 Python:** `{sys.version.split()[0]}`\n\n"
+        text += f"**💻 Repo:** `{__repo__}`\n"
+        text += f"**👨‍💻 Geliştirici:** `{__author__}`"
+        
+        await event.edit(
+            text,
+            buttons=[
+                [Button.inline("📜 Yardım", "help"), Button.inline("🔄 Güncelle", "update")],
+                [Button.inline("⚠️ Hard Update", "hard_update")],
+                [Button.inline("🔌 Modüller", "mods"), Button.inline("🔃 Restart", "restart")],
+                [Button.inline("❌ Kapat", "close")]
+            ]
+        )
+    
+    elif data == "update":
+        await event.edit("🔄 **Güncelleme kontrol ediliyor...**")
+        
+        try:
+            if not os.path.exists(".git"):
+                await event.edit("❌ Bu bir git repository değil!\n\n**Manuel Kurulum:**\n```bash\ngit clone https://github.com/USERNAME/REPO .\n```",
+                    buttons=[[Button.inline("🔙 Geri", "back_start")]])
+                return
+            
+            repo = git.Repo(".")
+            current_branch = repo.active_branch.name
+            origin = repo.remotes.origin
+            origin.fetch()
+            
+            commits_behind = list(repo.iter_commits(f'{current_branch}..origin/{current_branch}'))
+            
+            if not commits_behind:
+                await event.edit(f"✅ **Bot zaten güncel!**\n\n📌 Branch: `{current_branch}`\n🔖 Commit: `{repo.head.commit.hexsha[:7]}`\n🔢 Sürüm: `v{__version__}`",
+                    buttons=[[Button.inline("🔙 Geri", "back_start")]])
+                return
+            
     with open("userbot/__init__.py", "w", encoding="utf-8") as f:
         f.write(init_content)
     
