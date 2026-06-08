@@ -29,15 +29,22 @@ except:
 
 try:
     from pytgcalls import PyTgCalls
-    from pytgcalls.types import AudioPiped
+    from pytgcalls.types import MediaStream
     from pytgcalls.types import Update
-    from pytgcalls.types.input_stream import InputAudioStream
-    from pytgcalls.types.input_stream.quality import HighQualityAudio
-    from pytgcalls.exceptions import (
-        NoActiveGroupCall, GroupCallNotFound, 
-        AlreadyJoinedError, NotInGroupCallError
-    )
-except: 
+    # Eski import'lar kaldırıldı (py-tgcalls >= 1.0.0 ile uyumsuz)
+    # AudioPiped -> MediaStream, InputAudioStream/HighQualityAudio -> yok
+    try:
+        from pytgcalls.exceptions import (
+            NoActiveGroupCall, GroupCallNotFound,
+            AlreadyJoinedError, NotInGroupCallError
+        )
+    except ImportError:
+        # Yeni sürümlerde exception isimleri değişti
+        class NoActiveGroupCall(Exception): pass
+        class GroupCallNotFound(Exception): pass
+        class AlreadyJoinedError(Exception): pass
+        class NotInGroupCallError(Exception): pass
+except:
     pass
 
 # ================= AYARLAR =================
@@ -1030,9 +1037,9 @@ async def play_logic(chat_id, item):
 
     try:
         if is_live:
-            stream = AudioPiped(stream_url, HighQualityAudio())
+            stream = MediaStream(stream_url)
         else:
-            stream = AudioPiped(path, HighQualityAudio())
+            stream = MediaStream(path)
         
         assistant_in_chat = await is_assistant_in_chat(chat_id)
         success, error_msg = await try_join_voice_chat(chat_id, stream)
@@ -1328,7 +1335,7 @@ def register(client):
             return await reply_message(event, "⏸️ Zaten duraklatılmış.")
         
         try:
-            await pytgcalls.pause_stream(chat_id)
+            await pytgcalls.pause(chat_id)
             is_paused[chat_id] = True
             if chat_id in current_songs and current_songs[chat_id]:
                 current_songs[chat_id]['paused_at'] = time.time()
@@ -1349,7 +1356,7 @@ def register(client):
             return await reply_message(event, "▶️ Zaten çalıyor.")
         
         try:
-            await pytgcalls.resume_stream(chat_id)
+            await pytgcalls.resume(chat_id)
             if chat_id in current_songs and current_songs[chat_id]:
                 paused_at = current_songs[chat_id].get('paused_at', time.time())
                 started_at = current_songs[chat_id].get('started_at', time.time())
@@ -1683,7 +1690,7 @@ def register_bot(bot, client):
             if action == "ps":  # Durdur
                 if is_playing.get(chat_id) and not is_paused.get(chat_id):
                     try:
-                        await pytgcalls.pause_stream(chat_id)
+                        await pytgcalls.pause(chat_id)
                         is_paused[chat_id] = True
                         if chat_id in current_songs and current_songs[chat_id]:
                             current_songs[chat_id]['paused_at'] = time.time()
@@ -1700,7 +1707,7 @@ def register_bot(bot, client):
             elif action == "rs":  # Devam
                 if is_playing.get(chat_id) and is_paused.get(chat_id):
                     try:
-                        await pytgcalls.resume_stream(chat_id)
+                        await pytgcalls.resume(chat_id)
                         if chat_id in current_songs and current_songs[chat_id]:
                             paused_at = current_songs[chat_id].get('paused_at', time.time())
                             started_at = current_songs[chat_id].get('started_at', time.time())
