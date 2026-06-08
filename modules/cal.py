@@ -762,22 +762,52 @@ async def ensure_assistant_in_chat(chat_id):
     return await try_join_chat(chat_id, chat_info)
 
 async def try_join_voice_chat(chat_id, stream):
-    # py-tgcalls 2.x: join_group_call() ve change_stream() kaldirildi
-    # play() her ikisinin gorevini yapıyor
+    # py-tgcalls 2.x: play() hem join hem change_stream gorevini yapıyor
+    # music_client Telethon entity cache sorunu — once resolve et
+    try:
+        if music_client and music_client.is_connected():
+            try:
+                await music_client.get_entity(chat_id)
+            except Exception:
+                if userbot_client:
+                    try:
+                        entity = await userbot_client.get_entity(chat_id)
+                        if hasattr(entity, "username") and entity.username:
+                            await music_client.get_entity(entity.username)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
     try:
         await pytgcalls.play(chat_id, stream)
         return True, None
     except Exception as e:
         error_str = str(e).lower()
         error_name = type(e).__name__
+        if "could not find" in error_str or "input entity" in error_str or "peerchannel" in error_str:
+            # Entity bulunamadı — music_client grubu tanımıyor
+            # Gruba katılmayı dene, sonra tekrar play
+            try:
+                if userbot_client:
+                    entity = await userbot_client.get_entity(chat_id)
+                    from telethon.tl.functions.channels import JoinChannelRequest
+                    if hasattr(entity, "username") and entity.username:
+                        await music_client(JoinChannelRequest(entity.username))
+            except Exception:
+                pass
+            try:
+                await pytgcalls.play(chat_id, stream)
+                return True, None
+            except Exception as e2:
+                return False, f"❌ Entity hatası - Müzik hesabını gruba ekleyin: {e2}"
         if "noactivegroupcall" in error_name.lower() or "no active" in error_str:
             return False, "no_active_call"
         if "groupcallnotfound" in error_name.lower():
             return False, "no_active_call"
         if "not a member" in error_str or "participant" in error_str:
             return False, "need_join"
-        return False, f"\u274c Sesli sohbet hatas\u0131: {e}"
-
+        return False, f"❌ Sesli sohbet hatası: {e}"
 # ================= TEMİZLİK =================
 
 async def cleanup_music(chat_id, message=None, send_notification=True):
