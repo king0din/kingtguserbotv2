@@ -762,27 +762,21 @@ async def ensure_assistant_in_chat(chat_id):
     return await try_join_chat(chat_id, chat_info)
 
 async def try_join_voice_chat(chat_id, stream):
+    # py-tgcalls 2.x: join_group_call() ve change_stream() kaldirildi
+    # play() her ikisinin gorevini yapıyor
     try:
-        await pytgcalls.join_group_call(chat_id, stream)
+        await pytgcalls.play(chat_id, stream)
         return True, None
-    except AlreadyJoinedError:
-        try:
-            await pytgcalls.change_stream(chat_id, stream)
-            return True, None
-        except Exception as e:
-            return False, f"❌ Stream hatası: {e}"
     except Exception as e:
         error_str = str(e).lower()
         error_name = type(e).__name__
-        
-        if "NoActiveGroupCall" in error_name or "no active" in error_str:
+        if "noactivegroupcall" in error_name.lower() or "no active" in error_str:
             return False, "no_active_call"
-        if "GroupCallNotFound" in error_name:
+        if "groupcallnotfound" in error_name.lower():
             return False, "no_active_call"
         if "not a member" in error_str or "participant" in error_str:
             return False, "need_join"
-        
-        return False, f"❌ Sesli sohbet hatası: {e}"
+        return False, f"\u274c Sesli sohbet hatas\u0131: {e}"
 
 # ================= TEMİZLİK =================
 
@@ -1117,7 +1111,7 @@ async def next_song(chat_id):
         await send_message(chat_id, "📭 **Kuyruk bitti!**")
         
         try:
-            await pytgcalls.leave_group_call(chat_id)
+            await pytgcalls.leave_call(chat_id)
         except:
             pass
         
@@ -1147,31 +1141,35 @@ async def init_music(api_id, api_hash):
         pytgcalls = PyTgCalls(music_client)
     
     if not handlers_registered:
-        @pytgcalls.on_stream_end()
-        async def on_stream_end(client, update: Update):
+        # py-tgcalls >= 2.x: on_stream_end/on_left/on_kicked/on_closed_voice_chat artik yok
+        # Hepsi on_update() + filtrelerle yapiliyor
+        import pytgcalls.filters as pytgcalls_filters
+        from pytgcalls.types import StreamEnded, ChatUpdate
+
+        @pytgcalls.on_update(pytgcalls_filters.stream_end)
+        async def on_stream_end(client, update):
             await next_song(update.chat_id)
-        
-        @pytgcalls.on_left()
-        async def on_left_voice_chat(client, chat_id: int):
-            if is_playing.get(chat_id) and current_songs.get(chat_id):
-                await cleanup_music(chat_id, "Sesli sohbet sonlandı.", True)
-            else:
-                await cleanup_music(chat_id, None, False)
-        
-        @pytgcalls.on_kicked()
-        async def on_kicked_voice_chat(client, chat_id: int):
-            if is_playing.get(chat_id) and current_songs.get(chat_id):
-                await cleanup_music(chat_id, "Sesli sohbetten atıldım!", True)
-            else:
-                await cleanup_music(chat_id, None, False)
-        
-        @pytgcalls.on_closed_voice_chat()
-        async def on_closed_voice_chat(client, chat_id: int):
-            if is_playing.get(chat_id) and current_songs.get(chat_id):
-                await cleanup_music(chat_id, "Sesli sohbet kapatıldı.", True)
-            else:
-                await cleanup_music(chat_id, None, False)
-        
+
+        @pytgcalls.on_update(pytgcalls_filters.chat_update)
+        async def on_chat_update(client, update):
+            chat_id = update.chat_id
+            status = getattr(update, 'status', None)
+            if status == ChatUpdate.Status.LEFT_GROUP:
+                if is_playing.get(chat_id) and current_songs.get(chat_id):
+                    await cleanup_music(chat_id, "Sesli sohbet sonlandi.", True)
+                else:
+                    await cleanup_music(chat_id, None, False)
+            elif status == ChatUpdate.Status.KICKED:
+                if is_playing.get(chat_id) and current_songs.get(chat_id):
+                    await cleanup_music(chat_id, "Sesli sohbetten atildum!", True)
+                else:
+                    await cleanup_music(chat_id, None, False)
+            elif status == ChatUpdate.Status.CLOSED_VOICE_CHAT:
+                if is_playing.get(chat_id) and current_songs.get(chat_id):
+                    await cleanup_music(chat_id, "Sesli sohbet kapatildi.", True)
+                else:
+                    await cleanup_music(chat_id, None, False)
+
         handlers_registered = True
         try:
             await pytgcalls.start()
@@ -1317,7 +1315,7 @@ def register(client):
         
         await cleanup_music(chat_id, None, False)
         try:
-            await pytgcalls.leave_group_call(chat_id)
+            await pytgcalls.leave_call(chat_id)
         except:
             pass
         
@@ -1749,7 +1747,7 @@ def register_bot(bot, client):
                 
                 await cleanup_music(chat_id, None, False)
                 try:
-                    await pytgcalls.leave_group_call(chat_id)
+                    await pytgcalls.leave_call(chat_id)
                 except:
                     pass
                 
